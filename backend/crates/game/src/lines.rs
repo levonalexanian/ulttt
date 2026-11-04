@@ -44,6 +44,31 @@ pub fn has_line(mask: u16) -> bool {
     HAS_LINE[(mask & FULL) as usize]
 }
 
+const fn build_line_avoiding() -> [bool; 512] {
+    let mut table = [false; 512];
+    let mut mask = 0;
+    while mask < 512 {
+        let mut i = 0;
+        while i < LINES.len() {
+            if mask as u16 & line_mask(LINES[i]) == 0 {
+                table[mask] = true;
+            }
+            i += 1;
+        }
+        mask += 1;
+    }
+    table
+}
+
+static LINE_AVOIDING: [bool; 512] = build_line_avoiding();
+
+/// Whether some line contains none of the indices in `mask`, i.e. a player
+/// whose opponent holds `mask` could still complete a line.
+#[inline]
+pub fn line_avoiding(mask: u16) -> bool {
+    LINE_AVOIDING[(mask & FULL) as usize]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
