@@ -56,7 +56,8 @@ of 300M nodes per position where noted; the `alphabeta` baseline ran with a
 | majority-p38 | | 18/20 | 20/20, 280M nodes, 373s |
 | open-p38 | | | 19/20, 875M nodes |
 
-All 20 positions of `classic-p46` and `open-p46` are Lean-verified: their
+Every position of the p46 and p42 suites, in all three variants (120
+positions), is Lean-verified with `ulttt verify`: their
 certificates were accepted by `ulttt-check`.
 
 The empty board is still out of reach: on `open`, df-pn's proof number for
