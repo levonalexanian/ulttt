@@ -11,6 +11,8 @@ use crate::{Solver, Stats, Value};
 pub struct Options {
     /// Transposition table size as a power of two; `0` disables it.
     pub tt_bits: u32,
+    /// Bound the value by a draw when a player can no longer win.
+    pub draw_detection: bool,
     /// Only use the transposition table in positions with at least this many
     /// empty cells. Near the leaves, probing costs more than it saves.
     pub tt_min_empties: u32,
@@ -21,6 +23,7 @@ impl Default for Options {
         Options {
             tt_bits: 24,
             tt_min_empties: 12,
+            draw_detection: true,
         }
     }
 }
@@ -40,6 +43,7 @@ impl Options {
             match key {
                 "tt" if n <= 32 => opts.tt_bits = n,
                 "ttmin" => opts.tt_min_empties = n,
+                "draw" if n <= 1 => opts.draw_detection = n == 1,
                 _ => return Err(format!("unknown option {part:?}")),
             }
         }
@@ -55,6 +59,9 @@ impl Options {
         }
         if self.tt_min_empties != default.tt_min_empties {
             parts.push(format!("ttmin={}", self.tt_min_empties));
+        }
+        if self.draw_detection != default.draw_detection {
+            parts.push(format!("draw={}", self.draw_detection as u8));
         }
         parts.join(",")
     }
@@ -94,6 +101,29 @@ impl Search {
             return if pos.to_move() == Player::X { x } else { -x };
         }
 
+        // The value is at least `floor` and at most `cap`.
+        let (mut floor, mut cap) = (-1, 1);
+        if self.opts.draw_detection {
+            let me = pos.to_move();
+            if !pos.may_win(v, me) {
+                cap = 0;
+            }
+            if !pos.may_win(v, me.other()) {
+                floor = 0;
+            }
+            if floor == cap {
+                return 0;
+            }
+            if cap <= alpha {
+                return cap;
+            }
+            if floor >= beta {
+                return floor;
+            }
+            alpha = alpha.max(floor);
+            beta = beta.min(cap);
+        }
+
         let use_tt = self.tt.is_some() && pos.empties() >= self.opts.tt_min_empties;
         let key = if use_tt { pos.hash64() } else { 0 };
         let entry = match &self.tt {
@@ -128,6 +158,9 @@ impl Search {
                 }
             }
         }
+
+        // Children's bounds can be looser than what is known here.
+        best = best.clamp(floor, cap);
 
         if let Some(t) = self.tt.as_mut().filter(|_| use_tt) {
             let (lower, upper) = if best <= alpha0 {
@@ -178,7 +211,7 @@ mod tests {
     /// Every configuration agrees with the baseline on random endgames.
     #[test]
     fn agrees_with_alphabeta() {
-        let configs = ["", "tt=0", "tt=10", "ttmin=0"];
+        let configs = ["", "tt=0", "tt=10", "ttmin=0", "draw=0", "draw=0,tt=0"];
         let mut rng = Rng::new(42);
         for i in 0..60 {
             let v = Variant::ALL[i % 3];
