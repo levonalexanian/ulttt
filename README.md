@@ -18,9 +18,10 @@ Three rule variants are supported everywhere; see [`RULES.md`](RULES.md):
 | Rules in Lean | `proofs/` | The three variants, the game value, and proofs: games end, symmetries preserve value, `mayWin` pruning is sound, the certificate checker is sound |
 | Engine | `backend/crates/game` | Bitboard rules, symmetries, notation, perft |
 | Solvers | `backend/crates/solver` | `dfpn`: depth-first proof-number search (the default). `search`: alpha-beta with a lock-free transposition table, draw detection, move ordering, history heuristic and parallel search. `alphabeta`: the plain baseline |
+| Playing engine | `backend/crates/engine` | For positions too deep to solve: iterative-deepening alpha-beta (transposition table, PVS, killer and history ordering) over a heuristic evaluation, switching to the exact solver once it can finish; also a Monte Carlo tree search engine. Drives the frontend's moves |
 | Certificates | `backend/crates/certificate` | Strategy certificates for solved positions, checked by `ulttt-check` (Lean) |
 | Storage | `backend/crates/db` | SQLite: benchmark suites, runs, solved and Lean-verified positions |
-| CLI | `backend/crates/cli` | `ulttt perft`, `solve [--pv]`, `certify`, `verify`, `suite-create`, `bench`, `runs`, `compare` |
+| CLI | `backend/crates/cli` | `ulttt perft`, `solve [--pv]`, `certify`, `verify`, `suite-create`, `bench`, `runs`, `compare`, `match`, `matches`, `engine-bench` |
 | Differential tests | `backend/crates/difftest` | Rust rules, `may_win` and every solver's values against the Lean definitions on random games |
 | Frontend | `frontend/` | React app: play against the solver, analysis with the best line; the engine runs in the browser as WebAssembly |
 
@@ -56,8 +57,8 @@ of 300M nodes per position where noted; the `alphabeta` baseline ran with a
 | majority-p38 | | 18/20 | 20/20, 280M nodes, 373s |
 | open-p38 | | | 19/20, 875M nodes |
 
-Every position of the p46 and p42 suites, in all three variants (120
-positions), is Lean-verified with `ulttt verify`: their
+Every position of the p46 and p42 suites in all three variants, and of
+classic-p38 (140 positions), is Lean-verified with `ulttt verify`: their
 certificates were accepted by `ulttt-check`.
 
 The empty board is still out of reach: on `open`, df-pn's proof number for
