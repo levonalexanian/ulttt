@@ -11,6 +11,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+ulttt-engine = { path = "../engine" }
 ulttt-game = { path = "../game" }
 ulttt-solver = { path = "../solver" }
 # Must match the wasm-bindgen CLI version in .devcontainer/Dockerfile and CI.

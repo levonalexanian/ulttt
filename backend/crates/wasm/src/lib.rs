@@ -7,6 +7,7 @@
 
 use std::cell::RefCell;
 
+use ulttt_engine::Engine;
 use ulttt_game::{Moves, Outcome, Player, Position, Variant};
 use ulttt_solver::{Options, Search, Solver};
 use wasm_bindgen::prelude::*;
@@ -21,7 +22,14 @@ thread_local! {
     /// The solver, kept between calls so its table stays warm. The table does
     /// not distinguish variants, so it is replaced when the variant changes.
     static SOLVER: RefCell<Option<(Variant, Search)>> = const { RefCell::new(None) };
+    /// The playing engine, kept between moves for the same reason.
+    static ENGINE: RefCell<Option<Engine>> = const { RefCell::new(None) };
 }
+
+/// Table sizes of the playing engine: 2^18 heuristic entries (4 MiB) and 2^19
+/// exact ones (8 MiB).
+const ENGINE_TT_BITS: u32 = 18;
+const ENGINE_EXACT_TT_BITS: u32 = 19;
 
 fn variant(name: &str) -> Result<Variant, JsError> {
     name.parse().map_err(|e: String| JsError::new(&e))
@@ -108,30 +116,23 @@ pub fn analyze(variant_name: &str, pos: &str, node_limit: u32) -> Result<Vec<i32
     }))
 }
 
-/// How good a value is for player `p`: win 3, draw 2, unknown 1, loss 0.
-fn rank_for(value: i32, p: Player) -> u8 {
-    let x = match p {
-        Player::X => value,
-        Player::O if value == UNKNOWN => value,
-        Player::O => -value,
-    };
-    match x {
-        1 => 3,
-        0 => 2,
-        UNKNOWN => 1,
-        _ => 0,
-    }
-}
-
-/// A best move for the player to move, from `analyze`; `-1` if the game is over.
+/// The engine's move for the player to move, searching about `node_limit`
+/// positions; `-1` if the game is over. Uses the heuristic engine, which plays
+/// sensibly long before the exact solver can say anything, and keeps proven
+/// wins and draws once it can.
 #[wasm_bindgen(js_name = bestMove)]
 pub fn best_move(variant_name: &str, pos: &str, node_limit: u32) -> Result<i32, JsError> {
-    let p = position(pos)?.to_move();
-    let values = analyze(variant_name, pos, node_limit)?;
-    Ok(values
-        .chunks(2)
-        .max_by_key(|mv| (rank_for(mv[1], p), std::cmp::Reverse(mv[0])))
-        .map_or(-1, |mv| mv[0]))
+    let (v, pos) = (variant(variant_name)?, position(pos)?);
+    Ok(ENGINE.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.as_ref().is_none_or(|e| e.variant() != v) {
+            *slot = Some(Engine::new(v, ENGINE_TT_BITS, ENGINE_EXACT_TT_BITS));
+        }
+        let engine = slot.as_mut().expect("just set");
+        engine
+            .best_move(&pos, node_limit as u64)
+            .map_or(-1, |c| c.mv as i32)
+    }))
 }
 
 /// A line of optimal play from the position, or an empty list if it could not
