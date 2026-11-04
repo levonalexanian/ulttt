@@ -1,8 +1,13 @@
-//! A transposition table of value bounds and best moves.
+//! A transposition table of value bounds and best moves, shared by search
+//! threads without locks.
 //!
 //! Values are in `-1..=1` for the player to move, so an entry stores a lower
 //! and an upper bound, plus the move that produced the best score, if any.
-//! Entries are always replaced on collision.
+//! Entries are always replaced on collision. Each slot holds `key ^ data` and
+//! `data`; a slot torn by concurrent writes fails the key check and reads as
+//! empty.
+
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use ulttt_game::Move;
 
@@ -33,9 +38,8 @@ fn unpack(data: u64) -> Entry {
 }
 
 pub struct Table {
-    /// `[key, data]` pairs. All zeros means empty, so the table can be
-    /// allocated as zeroed memory and filled lazily by the OS.
-    entries: Vec<[u64; 2]>,
+    /// `[key ^ data, data]` pairs. All zeros means empty.
+    entries: Vec<[AtomicU64; 2]>,
     mask: u64,
 }
 
@@ -43,38 +47,53 @@ impl Table {
     /// A table with `2^bits` entries.
     pub fn new(bits: u32) -> Table {
         Table {
-            entries: vec![[0; 2]; 1 << bits],
+            entries: std::iter::repeat_with(Default::default)
+                .take(1 << bits)
+                .collect(),
             mask: (1 << bits) - 1,
         }
     }
 
     /// Empties the table.
     pub fn clear(&mut self) {
-        self.entries.fill([0; 2]);
+        for slot in &mut self.entries {
+            *slot = Default::default();
+        }
+    }
+
+    #[inline]
+    fn slot(&self, key: u64) -> &[AtomicU64; 2] {
+        &self.entries[(key & self.mask) as usize]
+    }
+
+    #[inline]
+    fn read(slot: &[AtomicU64; 2], key: u64) -> Option<Entry> {
+        let data = slot[1].load(Relaxed);
+        (data & USED != 0 && slot[0].load(Relaxed) ^ data == key).then(|| unpack(data))
     }
 
     /// The stored entry for a position hash, if present.
     #[inline]
     pub fn probe(&self, key: u64) -> Option<Entry> {
-        let [k, data] = self.entries[(key & self.mask) as usize];
-        (k == key && data & USED != 0).then(|| unpack(data))
+        Self::read(self.slot(key), key)
     }
 
     /// Stores an entry for a position hash. Bounds already stored for the same
     /// position are kept where tighter; the best move is replaced if given.
     #[inline]
-    pub fn store(&mut self, key: u64, e: Entry) {
-        let slot = &mut self.entries[(key & self.mask) as usize];
-        if slot[0] == key && slot[1] & USED != 0 {
-            let old = unpack(slot[1]);
-            slot[1] = pack(Entry {
+    pub fn store(&self, key: u64, e: Entry) {
+        let slot = self.slot(key);
+        let e = match Self::read(slot, key) {
+            Some(old) => Entry {
                 lower: old.lower.max(e.lower),
                 upper: old.upper.min(e.upper),
                 best: e.best.or(old.best),
-            });
-        } else {
-            *slot = [key, pack(e)];
-        }
+            },
+            None => e,
+        };
+        let data = pack(e);
+        slot[0].store(key ^ data, Relaxed);
+        slot[1].store(data, Relaxed);
     }
 }
 
@@ -106,5 +125,7 @@ mod tests {
         t.store(21, entry(1, 1, None));
         assert_eq!(t.probe(5), None);
         assert_eq!(t.probe(21), Some(entry(1, 1, None)));
+        t.clear();
+        assert_eq!(t.probe(21), None);
     }
 }
