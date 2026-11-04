@@ -293,10 +293,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ulttt-certificate"
+version = "0.1.0"
+dependencies = [
+ "ulttt-game",
+ "ulttt-solver",
+]
+
+[[package]]
 name = "ulttt-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "ulttt-certificate",
  "ulttt-db",
  "ulttt-game",
  "ulttt-solver",
