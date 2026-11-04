@@ -48,23 +48,19 @@ fn potential(own: u16, opp: u16, w: &Weights) -> f32 {
         .sum()
 }
 
-/// Each player's chance (X, O) of winning board `b`, in `0..=1`.
-fn board_chances(pos: &Position, b: u8, w: &Weights) -> (f32, f32) {
-    match pos.owner(b) {
-        Some(Player::X) => (1.0, 0.0),
-        Some(Player::O) => (0.0, 1.0),
-        None if pos.full_boards() >> b & 1 != 0 => (0.0, 0.0),
-        None => {
-            let (x, o) = (pos.local_cells(Player::X, b), pos.local_cells(Player::O, b));
-            let (px, po) = (potential(x, o, w), potential(o, x, w));
-            // Even an uncontested board is not won yet, and it gets harder to
-            // win as it fills up.
-            let free = (FULL & !(x | o)).count_ones() as f32 / 9.0;
-            let total = px + po + 4.0;
-            let scale = 0.5 + 0.4 * (1.0 - free);
-            (scale * px / total, scale * po / total)
-        }
+/// The chances of X and O on an unowned local board holding `x` and `o`.
+fn unowned_chances(x: u16, o: u16, w: &Weights) -> (f32, f32) {
+    // Overlapping or completed patterns never occur on an unowned board.
+    if x & o != 0 || x | o == FULL || has_line(x) || has_line(o) {
+        return (0.0, 0.0);
     }
+    let (px, po) = (potential(x, o, w), potential(o, x, w));
+    // Even an uncontested board is not won yet, and it gets harder to win as
+    // it fills up.
+    let free = (FULL & !(x | o)).count_ones() as f32 / 9.0;
+    let total = px + po + 4.0;
+    let scale = 0.5 + 0.4 * (1.0 - free);
+    (scale * px / total, scale * po / total)
 }
 
 /// Whether the player to move can win the game with their next move, by
@@ -77,37 +73,68 @@ pub fn wins_now(pos: &Position, v: Variant) -> bool {
         .any(|b| boards >> b & 1 != 0 && has_line(owned | 1 << b) && pos.local_threats(me, b) != 0)
 }
 
-/// The heuristic value of a position that is not over, for the player to move.
-pub fn evaluate(pos: &Position, v: Variant, w: &Weights) -> i32 {
-    let mut cx = [0.0f32; 9];
-    let mut co = [0.0f32; 9];
-    let mut local = 0.0;
-    for b in 0..9u8 {
-        let (x, o) = board_chances(pos, b, w);
-        cx[b as usize] = x;
-        co[b as usize] = o;
-        local += BOARD_WEIGHT[b as usize] * (x - o);
+/// The heuristic evaluation with its weights, and every unowned local board's
+/// chances precomputed (indexed by X's cells, then O's shifted by 9).
+pub struct Evaluator {
+    w: Weights,
+    chances: Vec<(f32, f32)>,
+}
+
+impl Evaluator {
+    pub fn new(w: Weights) -> Evaluator {
+        let chances = (0..1u32 << 18)
+            .map(|i| unowned_chances(i as u16 & FULL, (i >> 9) as u16 & FULL, &w))
+            .collect();
+        Evaluator { w, chances }
     }
-    let mut global = 0.0;
-    for line in LINES {
-        let [a, b, c] = line.map(usize::from);
-        global += cx[a] * cx[b] * cx[c] - co[a] * co[b] * co[c];
+
+    /// Each player's chance (X, O) of winning board `b`, in `0..=1`.
+    fn board_chances(&self, pos: &Position, b: u8) -> (f32, f32) {
+        match pos.owner(b) {
+            Some(Player::X) => (1.0, 0.0),
+            Some(Player::O) => (0.0, 1.0),
+            None => {
+                let x = pos.local_cells(Player::X, b) as usize;
+                let o = pos.local_cells(Player::O, b) as usize;
+                self.chances[x | o << 9]
+            }
+        }
     }
-    let mut score = w.global * global + w.local * local;
-    if v == Variant::Majority {
-        // Boards count even without a line.
-        score += w.majority * (cx.iter().sum::<f32>() - co.iter().sum::<f32>());
+
+    /// The heuristic value of a position that is not over, for the player to
+    /// move.
+    pub fn evaluate(&self, pos: &Position, v: Variant) -> i32 {
+        let w = &self.w;
+        let mut cx = [0.0f32; 9];
+        let mut co = [0.0f32; 9];
+        let mut local = 0.0;
+        for b in 0..9u8 {
+            let (x, o) = self.board_chances(pos, b);
+            cx[b as usize] = x;
+            co[b as usize] = o;
+            local += BOARD_WEIGHT[b as usize] * (x - o);
+        }
+        let mut global = 0.0;
+        for line in LINES {
+            let [a, b, c] = line.map(usize::from);
+            global += cx[a] * cx[b] * cx[c] - co[a] * co[b] * co[c];
+        }
+        let mut score = w.global * global + w.local * local;
+        if v == Variant::Majority {
+            // Boards count even without a line.
+            score += w.majority * (cx.iter().sum::<f32>() - co.iter().sum::<f32>());
+        }
+        // Choosing any board is worth something.
+        let free_choice = pos.allowed_boards(v).count_ones() > 1;
+        let tempo = if free_choice { w.tempo } else { 0.0 };
+        let for_x = (score as i32).clamp(-MAX_EVAL, MAX_EVAL);
+        let s = if pos.to_move() == Player::X {
+            for_x
+        } else {
+            -for_x
+        };
+        s + tempo as i32
     }
-    // Choosing any board is worth something.
-    let free_choice = pos.allowed_boards(v).count_ones() > 1;
-    let tempo = if free_choice { w.tempo } else { 0.0 };
-    let for_x = (score as i32).clamp(-MAX_EVAL, MAX_EVAL);
-    let s = if pos.to_move() == Player::X {
-        for_x
-    } else {
-        -for_x
-    };
-    s + tempo as i32
 }
 
 #[cfg(test)]
@@ -119,7 +146,7 @@ mod tests {
         let pos = Position::new();
         for v in Variant::ALL {
             // Only the tempo of a free choice.
-            assert_eq!(evaluate(&pos, v, &Weights::default()), 300);
+            assert_eq!(Evaluator::new(Weights::default()).evaluate(&pos, v), 300);
         }
     }
 
@@ -137,7 +164,7 @@ mod tests {
         let pos: Position = format!("{cells}/....x..../o/8").parse().unwrap();
         assert_eq!(pos.owner(4), Some(Player::X));
         // O to move: bad for O.
-        assert!(evaluate(&pos, Variant::Classic, &Weights::default()) < -1000);
+        assert!(Evaluator::new(Weights::default()).evaluate(&pos, Variant::Classic) < -1000);
     }
 
     #[test]

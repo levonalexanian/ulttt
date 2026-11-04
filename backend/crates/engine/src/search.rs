@@ -3,7 +3,7 @@
 use ulttt_game::{Move, Moves, Outcome, Player, Position, Variant, board_of, cell_of};
 use ulttt_solver::{Options as ExactOptions, Search, Solver, Value};
 
-use crate::eval::{WIN, evaluate, wins_now};
+use crate::eval::{Evaluator, WIN, wins_now};
 use crate::options::Options;
 
 /// Scores this close to [`WIN`] are forced results found by the search.
@@ -60,6 +60,7 @@ pub struct Engine {
     aborted: bool,
     exact: Search,
     opts: Options,
+    eval: Evaluator,
     clock: Option<Box<dyn Fn() -> f32>>,
 }
 
@@ -76,6 +77,7 @@ impl Engine {
                 tt_bits: opts.exact_tt_bits,
                 ..ExactOptions::default()
             }),
+            eval: Evaluator::new(opts.weights),
             opts,
             clock: None,
         }
@@ -319,7 +321,7 @@ impl Engine {
             if self.opts.leaf_wins && wins_now(pos, v) {
                 return WIN - ply - 1;
             }
-            return evaluate(pos, v, &self.opts.weights);
+            return self.eval.evaluate(pos, v);
         }
         let key = pos.hash64();
         let slot = (key as usize) & (self.table.len() - 1);
