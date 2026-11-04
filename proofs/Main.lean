@@ -7,7 +7,11 @@ Each input line is `<variant> <move> <move> ...` with moves as indices 0-80.
 For the start position and after each move, one output line is printed:
 `<legal moves>|<owners>|<result>` where legal moves are comma-separated
 indices, owners are 9 of `x`/`o`/`.`, and result is `x`, `o`, `d` (draw) or
-`-` (not over). Moves are played without checking legality. -/
+`-` (not over). Moves are played without checking legality.
+
+A line `value <variant> <move> ...` instead prints the game value (`1`, `0`
+or `-1`, from X's point of view) of the position after the moves, computed by
+`Ulttt.value`. That is a full minimax, so only use it near the end of a game. -/
 
 open Ulttt
 
@@ -51,9 +55,23 @@ def words (line : String) : List String :=
       else go cs (c :: cur)
   go line.toList []
 
+/-- The position after the moves, or an error. -/
+def playMoves (ms : List String) : Except String State := do
+  let mut s := State.init
+  for m in ms do
+    let some n := m.toNat? | throw s!"bad move {m}"
+    if h : n < 81 then
+      s := (s.play ⟨n, h⟩).compact
+    else throw s!"bad move {m}"
+  return s
+
 def runLine (line : String) : Except String (List String) := do
   match words line with
   | [] => throw "empty line"
+  | "value" :: vs :: ms =>
+    let some v := parseVariant vs | throw s!"unknown variant {vs}"
+    let s ← playMoves ms
+    return [toString (value v s)]
   | vs :: ms =>
     let some v := parseVariant vs | throw s!"unknown variant {vs}"
     let mut s := State.init
