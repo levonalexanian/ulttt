@@ -187,3 +187,18 @@ fn hash_distinguishes_single_cell_changes() {
         }
     }
 }
+
+/// The finished game `noLineFinish` from `proofs/Ulttt/Examples.lean`: no global
+/// line, X owns 4 boards and O 3. A draw in `classic`, an X win in `majority`.
+#[test]
+fn majority_tiebreak() {
+    let pos: Position = format!("{}/xxoo.xxo./o/4", "x".repeat(81)).parse().unwrap();
+    assert_eq!(
+        pos.result(Variant::Classic),
+        Some(ulttt_game::Outcome::Draw)
+    );
+    assert_eq!(
+        pos.result(Variant::Majority),
+        Some(ulttt_game::Outcome::Win(Player::X))
+    );
+}
