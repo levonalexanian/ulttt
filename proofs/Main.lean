@@ -38,13 +38,6 @@ def describe (v : Variant) (s : State) : String :=
     else "-"
   s!"{",".intercalate legal}|{owners}|{result}"
 
-/-- The same position with its cells and owners stored in arrays, so that long
-games do not build deep chains of closures. Pointwise equal to `s`. -/
-def Ulttt.State.compact (s : State) : State :=
-  let cells := Array.ofFn s.cells
-  let owner := Array.ofFn s.owner
-  { s with cells := fun m => cells[m.val]!, owner := fun b => owner[b.val]! }
-
 /-- Splits a line into words separated by spaces, ignoring line endings. -/
 def words (line : String) : List String :=
   let rec go : List Char → List Char → List String

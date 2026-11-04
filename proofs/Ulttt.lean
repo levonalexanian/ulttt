@@ -3,6 +3,7 @@ import Ulttt.State
 import Ulttt.Rules
 import Ulttt.Value
 import Ulttt.Theorems
+import Ulttt.Fast
 import Ulttt.Examples
 import Ulttt.Symmetry
 import Ulttt.SymmetryRules
