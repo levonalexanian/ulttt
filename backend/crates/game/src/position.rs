@@ -284,10 +284,26 @@ impl Position {
         m < 81 && self.legal_moves(v) >> m & 1 != 0
     }
 
-    /// The local board `board` of player `p` as a 9-bit mask.
+    /// Board `board` of an 81-bit cell mask, as a 9-bit mask.
     #[inline]
     fn local(cells: u128, board: u8) -> u16 {
         (cells >> (9 * board)) as u16 & FULL
+    }
+
+    /// The cells of local board `board` occupied by `p`, as a 9-bit mask.
+    #[inline]
+    pub fn local_cells(&self, p: Player, board: u8) -> u16 {
+        Self::local(self.cells[p.index()], board)
+    }
+
+    /// Empty cells of local board `board` where `p` would complete a line, as a
+    /// 9-bit mask. Ignores whether the board is already owned or playable.
+    #[inline]
+    pub fn local_threats(&self, p: Player, board: u8) -> u16 {
+        crate::lines::completing_cells(
+            self.local_cells(p, board),
+            self.local_cells(p.other(), board),
+        )
     }
 
     /// Plays `m` for the player to move. The same in every variant; only which

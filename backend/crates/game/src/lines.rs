@@ -62,6 +62,22 @@ const fn build_line_avoiding() -> [bool; 512] {
 
 static LINE_AVOIDING: [bool; 512] = build_line_avoiding();
 
+/// Empty indices where a player holding `own` (with the opponent holding
+/// `opp`) would complete a line.
+#[inline]
+pub fn completing_cells(own: u16, opp: u16) -> u16 {
+    let empty = !(own | opp) & FULL;
+    let mut out = 0;
+    for line in LINES {
+        let l = line_mask(line);
+        let free = l & empty;
+        if own & l | free == l && free.count_ones() == 1 {
+            out |= free;
+        }
+    }
+    out
+}
+
 /// Whether some line contains none of the indices in `mask`, i.e. a player
 /// whose opponent holds `mask` could still complete a line.
 #[inline]
@@ -82,5 +98,15 @@ mod tests {
         assert!(!has_line(0b000_000_011));
         // A drawn grid: x o x / x o o / o x x
         assert!(!has_line(0b110_001_101));
+    }
+
+    #[test]
+    fn completing() {
+        // x x . / . o . / . . . : x completes the top row at 2.
+        assert_eq!(completing_cells(0b11, 0b1_0000), 0b100);
+        // Blocked by o at 2.
+        assert_eq!(completing_cells(0b11, 0b100), 0);
+        // x at 0 and 4: completes the diagonal at 8.
+        assert_eq!(completing_cells(0b1_0001, 0), 1 << 8);
     }
 }
