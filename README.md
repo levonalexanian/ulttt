@@ -79,6 +79,12 @@ at 20k nodes per move. The margins are 95% intervals.
 | Killer moves, two-entry table buckets, late move reductions, aspiration windows | no significant gain; off or kept neutral |
 | Monte Carlo tree search instead of alpha-beta | -127 to -207 Elo at 100 ms per move |
 
+`ulttt engine-accuracy` checks the engine against known values: on the
+benchmark suites' solved positions, its move at 20k nodes, with the exact
+solver turned off, keeps the position's value in 167 of 179 positions (all
+nine p46, p42 and p38 suites; between 17/20 on open-p42 and 20/20 on
+classic-p46, majority-p46 and majority-p38).
+
 `ulttt engine-bench` measures speed (about 5M positions per second on one
 core) and checksums the chosen moves, so pure speed changes can be checked to
 play the same moves.
