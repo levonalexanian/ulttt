@@ -1,8 +1,12 @@
 name = "ulttt"
-defaultTargets = ["Ulttt"]
+defaultTargets = ["Ulttt", "ulttt-ref"]
 
 [leanOptions]
 autoImplicit = false
 
 [[lean_lib]]
 name = "Ulttt"
+
+[[lean_exe]]
+name = "ulttt-ref"
+root = "Main"
