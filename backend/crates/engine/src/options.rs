@@ -61,6 +61,9 @@ pub struct Options {
     pub killers: bool,
     /// Two table entries per bucket, keeping the deeper current one.
     pub tt_buckets: bool,
+    /// Search moves from this index on (in move order) one ply shallower
+    /// first, at depth 3 or more (`0` turns it off).
+    pub lmr: u32,
     pub weights: Weights,
 }
 
@@ -76,15 +79,15 @@ impl Default for Options {
             quiescence: 0,
             killers: true,
             tt_buckets: false,
+            lmr: 0,
             weights: Weights::default(),
         }
     }
 }
 
 impl Options {
-    /// Parses comma-separated `key=value` settings on top of the defaults:
-    /// `tt`, `xtt`, `xmax`, `xshare`, `leafwin`, `pvs`, `killers`, `tt2` (0 or 1), `qs` (plies), and the weights `global`, `local`,
-    /// `majority`, `tempo`, `line1`, `line2`, `union`, `sent`.
+    /// Parses comma-separated `key=value` settings on top of the defaults. The
+    /// keys are in the `match` below; flags take `0` or `1`.
     pub fn parse(spec: &str) -> Result<Options, String> {
         let mut o = Options::default();
         for part in spec.split(',').filter(|p| !p.is_empty()) {
@@ -105,6 +108,7 @@ impl Options {
                 "tt" => o.tt_bits = int()?.clamp(4, 30),
                 "xtt" => o.exact_tt_bits = int()?.clamp(4, 30),
                 "xmax" => o.exact_max_empties = int()?,
+                "lmr" => o.lmr = int()?,
                 "tt2" => o.tt_buckets = int()? != 0,
                 "killers" => o.killers = int()? != 0,
                 "qs" => o.quiescence = int()?,
