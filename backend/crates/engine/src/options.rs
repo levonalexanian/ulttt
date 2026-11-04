@@ -51,6 +51,8 @@ pub struct Options {
     pub quiescence: u32,
     /// Try two recent cutoff moves per ply early.
     pub killers: bool,
+    /// Two table entries per bucket, keeping the deeper current one.
+    pub tt_buckets: bool,
     pub weights: Weights,
 }
 
@@ -65,6 +67,7 @@ impl Default for Options {
             pvs: true,
             quiescence: 0,
             killers: true,
+            tt_buckets: false,
             weights: Weights::default(),
         }
     }
@@ -72,7 +75,7 @@ impl Default for Options {
 
 impl Options {
     /// Parses comma-separated `key=value` settings on top of the defaults:
-    /// `tt`, `xtt`, `xmax`, `xshare`, `leafwin`, `pvs`, `killers` (0 or 1), `qs` (plies), and the weights `global`, `local`,
+    /// `tt`, `xtt`, `xmax`, `xshare`, `leafwin`, `pvs`, `killers`, `tt2` (0 or 1), `qs` (plies), and the weights `global`, `local`,
     /// `majority`, `tempo`, `line1`, `line2`.
     pub fn parse(spec: &str) -> Result<Options, String> {
         let mut o = Options::default();
@@ -94,6 +97,7 @@ impl Options {
                 "tt" => o.tt_bits = int()?.clamp(4, 30),
                 "xtt" => o.exact_tt_bits = int()?.clamp(4, 30),
                 "xmax" => o.exact_max_empties = int()?,
+                "tt2" => o.tt_buckets = int()? != 0,
                 "killers" => o.killers = int()? != 0,
                 "qs" => o.quiescence = int()?,
                 "pvs" => o.pvs = int()? != 0,

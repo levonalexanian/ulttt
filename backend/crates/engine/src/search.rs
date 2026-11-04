@@ -31,6 +31,8 @@ struct Entry {
     depth: u8,
     bound: u8,
     best: u8,
+    /// The search (move) that stored the entry.
+    age: u8,
 }
 
 const EXACT: u8 = 0;
@@ -57,6 +59,8 @@ pub struct Engine {
     history: [[i32; 81]; 2],
     /// Two moves per ply that recently caused a cutoff there.
     killers: [[u8; 2]; 82],
+    /// Counts searches, to tell old table entries from current ones.
+    generation: u8,
     nodes: u64,
     limit: u64,
     aborted: bool,
@@ -73,6 +77,7 @@ impl Engine {
             table: vec![Entry::default(); 1 << opts.tt_bits],
             history: [[0; 81]; 2],
             killers: [[NO_MOVE; 2]; 82],
+            generation: 0,
             nodes: 0,
             limit: 0,
             aborted: false,
@@ -187,6 +192,7 @@ impl Engine {
     fn search_root(&mut self, pos: &Position, candidates: u128, limit: u64) -> (Move, i32, u32) {
         self.nodes = 0;
         self.limit = limit;
+        self.generation = self.generation.wrapping_add(1);
         self.aborted = false;
         for h in self.history.iter_mut().flatten() {
             *h /= 8;
@@ -395,7 +401,10 @@ impl Engine {
             return self.eval.evaluate(pos, v);
         }
         let key = pos.hash64();
-        let slot = (key as usize) & (self.table.len() - 1);
+        let mut slot = (key as usize) & (self.table.len() - 1);
+        if self.opts.tt_buckets && self.table[slot].key != key && self.table[slot ^ 1].key == key {
+            slot ^= 1;
+        }
         let e = self.table[slot];
         let mut tt_move = NO_MOVE;
         if e.key == key {
@@ -457,8 +466,20 @@ impl Engine {
         } else {
             EXACT
         };
+        if self.opts.tt_buckets && e.key != key {
+            // Two entries per bucket: the first keeps the deepest current
+            // search, the second takes whatever it displaces.
+            let first = slot & !1;
+            let f = self.table[first];
+            slot = if f.key == key || f.age != self.generation || u32::from(f.depth) <= depth {
+                first
+            } else {
+                first | 1
+            };
+        }
         self.table[slot] = Entry {
             key,
+            age: self.generation,
             score: to_table(best, ply),
             depth: depth.min(255) as u8,
             bound,
