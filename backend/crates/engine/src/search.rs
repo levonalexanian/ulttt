@@ -283,6 +283,61 @@ impl Engine {
         list
     }
 
+    /// Past the horizon, keep following moves that win a local board (up to
+    /// `left` of them), so the evaluation does not stop in the middle of a
+    /// capture sequence. The player to move may also stop and take the
+    /// static evaluation.
+    fn quiesce(&mut self, pos: &Position, mut alpha: i32, beta: i32, ply: i32, left: u32) -> i32 {
+        let v = self.variant;
+        let stand = self.eval.evaluate(pos, v);
+        if left == 0 || stand >= beta {
+            return stand;
+        }
+        alpha = alpha.max(stand);
+        let me = pos.to_move();
+        let owned = pos.owned_by(Player::X) | pos.owned_by(Player::O);
+        let boards = pos.allowed_boards(v) & !owned;
+        let mut captures = 0u128;
+        for b in 0..9u8 {
+            if boards >> b & 1 != 0 {
+                captures |= u128::from(pos.local_threats(me, b)) << (9 * b);
+            }
+        }
+        let mut best = stand;
+        for m in Moves(captures) {
+            self.nodes += 1;
+            if self.nodes >= self.limit {
+                self.aborted = true;
+                return 0;
+            }
+            let child = pos.after(m);
+            let s = if let Some(o) = child.result(v) {
+                match o {
+                    Outcome::Win(p) if p == me => WIN - ply - 1,
+                    Outcome::Win(_) => -(WIN - ply - 1),
+                    Outcome::Draw => 0,
+                }
+            } else if wins_now(&child, v) {
+                -(WIN - ply - 2)
+            } else {
+                -self.quiesce(&child, -beta, -alpha, ply + 1, left - 1)
+            };
+            if self.aborted {
+                return 0;
+            }
+            if s > best {
+                best = s;
+                if s > alpha {
+                    alpha = s;
+                }
+                if alpha >= beta {
+                    break;
+                }
+            }
+        }
+        best
+    }
+
     fn negamax(
         &mut self,
         pos: &Position,
@@ -320,6 +375,9 @@ impl Engine {
         if depth == 0 {
             if self.opts.leaf_wins && wins_now(pos, v) {
                 return WIN - ply - 1;
+            }
+            if self.opts.quiescence > 0 {
+                return self.quiesce(pos, alpha, beta, ply, self.opts.quiescence);
             }
             return self.eval.evaluate(pos, v);
         }
