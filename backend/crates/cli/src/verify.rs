@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 
 use clap::Args;
 use ulttt_db::Db;
@@ -48,6 +50,9 @@ pub struct VerifyArgs {
     /// The Lean certificate checker.
     #[arg(long, default_value = "proofs/.lake/build/bin/ulttt-check")]
     checker: PathBuf,
+    /// Positions certified and checked in parallel.
+    #[arg(short, long, default_value_t = 1)]
+    jobs: usize,
 }
 
 /// Solves every position of a suite, certifies its value, checks the
@@ -58,38 +63,57 @@ pub fn verify_suite(db: &Db, args: &VerifyArgs) -> ExitCode {
         eprintln!("no suite named {:?}", args.suite);
         return ExitCode::FAILURE;
     };
-    let Some(mut solver) = ulttt_solver::by_name(&args.solver) else {
+    if ulttt_solver::by_name(&args.solver).is_none() {
         eprintln!("unknown solver {:?}", args.solver);
         return ExitCode::FAILURE;
-    };
+    }
     let dir = std::env::temp_dir().join(format!("ulttt-verify-{}", std::process::id()));
     let mut failures = 0;
-    for (i, pos) in suite.positions.iter().enumerate() {
-        solver.reset();
-        let (value, files) =
-            write_certificates(solver.as_mut(), pos, suite.variant, &dir, &format!("{i}"));
-        let status = Command::new(&args.checker)
-            .args(files.iter().map(|(p, _)| p))
-            .output()
-            .expect("run the Lean checker");
-        let moves: usize = files.iter().map(|(_, n)| n).sum();
-        if status.status.success() {
-            db.store_verified(suite.variant, pos, value, moves as u64, &args.solver)
-                .expect("store verified");
-            println!(
-                "{i:>3}  {:<5} verified ({moves} certificate moves)",
-                value.name()
-            );
-        } else {
-            failures += 1;
-            println!("{i:>3}  {:<5} REJECTED by the checker", value.name());
-            print!("{}", String::from_utf8_lossy(&status.stdout));
+    // Jobs take positions in turn; results come back to this thread, which
+    // owns the database.
+    let next = AtomicUsize::new(0);
+    let (tx, rx) = mpsc::channel();
+    let (positions, variant, dir) = (&suite.positions, suite.variant, &dir);
+    std::thread::scope(|scope| {
+        for _ in 0..args.jobs.max(1) {
+            let (tx, next) = (tx.clone(), &next);
+            scope.spawn(move || {
+                let mut solver = ulttt_solver::by_name(&args.solver).expect("checked above");
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(pos) = positions.get(i) else { break };
+                    solver.reset();
+                    let (value, files) =
+                        write_certificates(solver.as_mut(), pos, variant, dir, &format!("{i}"));
+                    let output = Command::new(&args.checker)
+                        .args(files.iter().map(|(p, _)| p))
+                        .output()
+                        .expect("run the Lean checker");
+                    for (p, _) in &files {
+                        let _ = std::fs::remove_file(p);
+                    }
+                    let moves: usize = files.iter().map(|(_, n)| n).sum();
+                    let _ = tx.send((i, value, moves, output));
+                }
+            });
         }
-        for (p, _) in &files {
-            let _ = std::fs::remove_file(p);
+        drop(tx);
+        for (i, value, moves, output) in rx {
+            if output.status.success() {
+                db.store_verified(variant, &positions[i], value, moves as u64, &args.solver)
+                    .expect("store verified");
+                println!(
+                    "{i:>3}  {:<5} verified ({moves} certificate moves)",
+                    value.name()
+                );
+            } else {
+                failures += 1;
+                println!("{i:>3}  {:<5} REJECTED by the checker", value.name());
+                print!("{}", String::from_utf8_lossy(&output.stdout));
+            }
         }
-    }
-    let _ = std::fs::remove_dir(&dir);
+    });
+    let _ = std::fs::remove_dir(dir);
     for (variant, n) in db.verified_counts().expect("count verified") {
         println!("verified positions ({variant}): {n}");
     }
