@@ -27,6 +27,9 @@ pub struct TexelArgs {
     /// Rounds of coordinate search.
     #[arg(long, default_value_t = 20)]
     rounds: usize,
+    /// The weights to tune, comma separated. Tuning all of them overfits.
+    #[arg(long, default_value = "global,local,majority,tempo,line1,line2")]
+    fields: String,
 }
 
 /// A quiet position and its game's result for X (1, 0.5 or 0).
@@ -146,7 +149,9 @@ pub fn run(db: &Db, args: &TexelArgs) -> ExitCode {
     for round in 1..=args.rounds {
         let mut improved = false;
         for (name, field) in FIELDS {
-            if name == "majority" && v != Variant::Majority {
+            if (name == "majority" && v != Variant::Majority)
+                || !args.fields.split(',').any(|f| f == name)
+            {
                 continue;
             }
             for dir in [1.0 + step, 1.0 / (1.0 + step)] {
