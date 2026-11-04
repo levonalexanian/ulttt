@@ -64,6 +64,25 @@ certificates were accepted by `ulttt-check`.
 The empty board is still out of reach: on `open`, df-pn's proof number for
 "X wins" keeps growing with the search.
 
+### Playing engine
+
+Positions too deep to solve are played by `ulttt-engine`. Changes are kept
+only when a self-play match (`ulttt match`, recorded in the database) shows
+they help: each opening (4 random moves) is played twice with colors swapped,
+at 20k nodes per move. The margins are 95% intervals.
+
+| Change | Result |
+| --- | --- |
+| Quiescence search over board-winning moves (6 plies) | +38 ±18 Elo (classic, 800 games), +65 ±22 (majority) |
+| Evaluation weights tuned on self-play games (`ulttt texel`), per variant | +37 ±18 Elo (classic, 800 games), +38 ±22 (majority); open keeps the untuned weights (+10 ±22) |
+| Win-in-one at the horizon, PVS | +20, +14 ±26 Elo |
+| Killer moves, two-entry table buckets, late move reductions, aspiration windows | no significant gain; off or kept neutral |
+| Monte Carlo tree search instead of alpha-beta | -127 to -207 Elo at 100 ms per move |
+
+`ulttt engine-bench` measures speed (about 5M positions per second on one
+core) and checksums the chosen moves, so pure speed changes can be checked to
+play the same moves.
+
 ## Development
 
 Everything runs in the devcontainer (`.devcontainer/`): open the repo in VS Code
