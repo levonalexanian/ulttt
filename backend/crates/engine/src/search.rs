@@ -430,6 +430,27 @@ impl Engine {
             let s = if i == 0 || !self.opts.pvs {
                 -self.negamax(&child, depth - 1, -beta, -alpha, ply + 1)
             } else {
+                // Late move reductions: a move this far down the order is
+                // probably bad, so first check that at reduced depth.
+                let (b, c) = (board_of(m), cell_of(m));
+                let reduce = self.opts.lmr > 0
+                    && i >= self.opts.lmr as usize
+                    && depth >= 3
+                    && m != tt_move
+                    && !(pos.owner(b).is_none() && pos.local_threats(me, b) >> c & 1 != 0);
+                if reduce {
+                    let s = -self.negamax(&child, depth - 2, -alpha - 1, -alpha, ply + 1);
+                    if self.aborted {
+                        return 0;
+                    }
+                    if s <= alpha {
+                        if s > best {
+                            best = s;
+                            best_move = m;
+                        }
+                        continue;
+                    }
+                }
                 // Principal variation search: prove the move no better than
                 // the best so far with a null window, re-search if it is.
                 let s = -self.negamax(&child, depth - 1, -alpha - 1, -alpha, ply + 1);
