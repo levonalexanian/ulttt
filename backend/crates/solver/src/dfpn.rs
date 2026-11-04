@@ -100,6 +100,9 @@ impl Question {
 
 pub struct DfPn {
     tt: Table,
+    /// Positions with at least this many empty cells are looked up by their
+    /// symmetry class, so symmetric positions share table entries.
+    sym_min_empties: u32,
     stats: Stats,
     node_limit: u64,
     limit_now: u64,
@@ -107,9 +110,12 @@ pub struct DfPn {
 }
 
 impl DfPn {
-    pub fn new(tt_bits: u32) -> DfPn {
+    /// A solver with `2^tt_bits` table entries, using symmetry classes for
+    /// positions with at least `sym_min_empties` empty cells (82: never).
+    pub fn new(tt_bits: u32, sym_min_empties: u32) -> DfPn {
         DfPn {
             tt: Table::new(tt_bits),
+            sym_min_empties,
             stats: Stats::default(),
             node_limit: u64::MAX,
             limit_now: u64::MAX,
@@ -146,7 +152,10 @@ impl DfPn {
         None
     }
 
-    fn key(q: &Question, pos: &Position) -> u64 {
+    fn key(&self, q: &Question, pos: &Position) -> u64 {
+        if pos.empties() >= self.sym_min_empties {
+            return pos.canonical().0.hash64() ^ q.salt;
+        }
         pos.hash64() ^ q.salt
     }
 
@@ -154,7 +163,7 @@ impl DfPn {
         if let Some(pd) = self.evaluate(q, pos) {
             return pd;
         }
-        self.tt.get(Self::key(q, pos)).unwrap_or((1, 1))
+        self.tt.get(self.key(q, pos)).unwrap_or((1, 1))
     }
 
     /// Searches `pos` until its `phi >= th_phi` or `delta >= th_delta`.
@@ -167,7 +176,7 @@ impl DfPn {
         if let Some(pd) = self.evaluate(q, pos) {
             return pd;
         }
-        let key = Self::key(q, pos);
+        let key = self.key(q, pos);
         let start = self.stats.nodes;
         // Children and their numbers, on the stack. The numbers are kept here
         // rather than re-read from the table, where they may be overwritten.
@@ -283,18 +292,18 @@ mod tests {
     #[test]
     fn agrees_with_alphabeta() {
         let mut rng = Rng::new(9);
-        let mut dfpn = DfPn::new(18);
+        let mut dfpn = DfPn::new(18, 82);
+        let mut dfpn_sym = DfPn::new(18, 0);
         for i in 0..90 {
             let v = Variant::ALL[i % 3];
             let Some(pos) = rng.position(v, 52) else {
                 continue;
             };
+            let want = AlphaBeta::new().solve(&pos, v);
             dfpn.reset();
-            assert_eq!(
-                dfpn.solve(&pos, v),
-                AlphaBeta::new().solve(&pos, v),
-                "{v} {pos}"
-            );
+            assert_eq!(dfpn.solve(&pos, v), want, "{v} {pos}");
+            dfpn_sym.reset();
+            assert_eq!(dfpn_sym.solve(&pos, v), want, "symmetry keys: {v} {pos}");
         }
     }
 }
