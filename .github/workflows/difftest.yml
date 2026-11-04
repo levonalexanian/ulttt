@@ -1,0 +1,35 @@
+name: Difftest
+
+# Plays random games with the Rust engine and checks the Lean reference
+# executable agrees on every position.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "proofs/**"
+      - "backend/crates/game/**"
+      - "backend/crates/difftest/**"
+      - ".github/workflows/difftest.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  difftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: proofs
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      - name: Fixed seed
+        working-directory: backend
+        run: cargo run --release -p ulttt-difftest -- ../proofs/.lake/build/bin/ulttt-ref 3000 1
+      - name: Fresh seed
+        working-directory: backend
+        run: cargo run --release -p ulttt-difftest -- ../proofs/.lake/build/bin/ulttt-ref 3000 ${{ github.run_id }}
