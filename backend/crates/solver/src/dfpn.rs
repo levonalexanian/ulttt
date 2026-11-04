@@ -18,33 +18,62 @@ use crate::{Solver, Stats, Value};
 
 const INF: u32 = u32::MAX / 4;
 
-/// Table entries: `(key, phi, delta)`; key 0 marks an empty slot.
+#[derive(Clone, Copy, Default)]
+struct Entry {
+    /// 0 marks an empty slot.
+    key: u64,
+    phi: u32,
+    delta: u32,
+    /// Nodes searched to compute this entry: entries that took more work are
+    /// kept in preference to cheap ones.
+    work: u32,
+}
+
+/// A transposition table of `(phi, delta)` in buckets of two entries.
 struct Table {
-    entries: Vec<(u64, u32, u32)>,
+    entries: Vec<[Entry; 2]>,
     mask: u64,
 }
 
 impl Table {
+    /// A table with `2^bits` entries.
     fn new(bits: u32) -> Table {
         Table {
-            entries: vec![(0, 0, 0); 1 << bits],
-            mask: (1 << bits) - 1,
+            entries: vec![[Entry::default(); 2]; 1 << (bits - 1)],
+            mask: (1 << (bits - 1)) - 1,
         }
     }
 
     #[inline]
     fn get(&self, key: u64) -> Option<(u32, u32)> {
-        let (k, phi, delta) = self.entries[(key & self.mask) as usize];
-        (k == key).then_some((phi, delta))
+        self.entries[(key & self.mask) as usize]
+            .iter()
+            .find(|e| e.key == key)
+            .map(|e| (e.phi, e.delta))
     }
 
     #[inline]
-    fn put(&mut self, key: u64, phi: u32, delta: u32) {
-        self.entries[(key & self.mask) as usize] = (key, phi, delta);
+    fn put(&mut self, key: u64, phi: u32, delta: u32, work: u32) {
+        let bucket = &mut self.entries[(key & self.mask) as usize];
+        let slot = match bucket.iter().position(|e| e.key == key) {
+            Some(i) => i,
+            None => (bucket[1].work < bucket[0].work) as usize,
+        };
+        let work = if bucket[slot].key == key {
+            work.max(bucket[slot].work)
+        } else {
+            work
+        };
+        bucket[slot] = Entry {
+            key,
+            phi,
+            delta,
+            work,
+        };
     }
 
     fn clear(&mut self) {
-        self.entries.fill((0, 0, 0));
+        self.entries.fill([Entry::default(); 2]);
     }
 }
 
@@ -139,18 +168,23 @@ impl DfPn {
             return pd;
         }
         let key = Self::key(q, pos);
-        let children: Vec<Position> = Moves(pos.legal_moves(q.variant))
-            .map(|m| pos.after(m))
-            .collect();
-        // Children's numbers, kept here rather than re-read from the table,
-        // where they may have been overwritten.
-        let mut pds: Vec<(u32, u32)> = children.iter().map(|c| self.lookup(q, c)).collect();
+        let start = self.stats.nodes;
+        // Children and their numbers, on the stack. The numbers are kept here
+        // rather than re-read from the table, where they may be overwritten.
+        let mut children = [Position::new(); 81];
+        let mut pds = [(0u32, 0u32); 81];
+        let mut n = 0;
+        for m in Moves(pos.legal_moves(q.variant)) {
+            children[n] = pos.after(m);
+            pds[n] = self.lookup(q, &children[n]);
+            n += 1;
+        }
 
         loop {
             // phi(n) = min delta(c); delta(n) = sum phi(c).
             let (mut best, mut best_delta, mut second_delta) = (0usize, INF, INF);
             let (mut sum_phi, mut best_phi) = (0u32, 0u32);
-            for (i, &(cphi, cdelta)) in pds.iter().enumerate() {
+            for (i, &(cphi, cdelta)) in pds[..n].iter().enumerate() {
                 sum_phi = sum_phi.saturating_add(cphi).min(INF);
                 if cdelta < best_delta {
                     second_delta = best_delta;
@@ -164,7 +198,8 @@ impl DfPn {
             let (phi, delta) = (best_delta, sum_phi);
             if phi >= th_phi || delta >= th_delta || self.aborted {
                 if !self.aborted {
-                    self.tt.put(key, phi, delta);
+                    let work = (self.stats.nodes - start).min(u32::MAX as u64) as u32;
+                    self.tt.put(key, phi, delta, work);
                 }
                 return (phi, delta);
             }
@@ -173,7 +208,15 @@ impl DfPn {
                 .saturating_sub(delta)
                 .saturating_add(best_phi)
                 .min(INF);
-            let child_th_delta = th_phi.min(second_delta.saturating_add(1)).min(INF);
+            // The 1 + epsilon trick (Pawlewicz & Lew): a looser bound lets the
+            // child search longer before control returns here.
+            let child_th_delta = th_phi
+                .min(
+                    second_delta
+                        .saturating_add(second_delta / 4)
+                        .saturating_add(1),
+                )
+                .min(INF);
             pds[best] = self.mid(q, &children[best], child_th_phi, child_th_delta);
             if self.aborted {
                 return (1, 1);
