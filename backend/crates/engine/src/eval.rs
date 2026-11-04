@@ -8,7 +8,7 @@
 //! third are worth almost a win, and a line with a board the player cannot win
 //! is worth nothing.
 
-use ulttt_game::lines::{FULL, LINES};
+use ulttt_game::lines::{FULL, LINES, has_line};
 use ulttt_game::{Player, Position, Variant};
 
 use crate::options::Weights;
@@ -65,6 +65,16 @@ fn board_chances(pos: &Position, b: u8, w: &Weights) -> (f32, f32) {
             (scale * px / total, scale * po / total)
         }
     }
+}
+
+/// Whether the player to move can win the game with their next move, by
+/// taking a local board that completes a global line.
+pub fn wins_now(pos: &Position, v: Variant) -> bool {
+    let me = pos.to_move();
+    let owned = pos.owned_by(me);
+    let boards = pos.allowed_boards(v) & !(pos.owned_by(Player::X) | pos.owned_by(Player::O));
+    (0..9u8)
+        .any(|b| boards >> b & 1 != 0 && has_line(owned | 1 << b) && pos.local_threats(me, b) != 0)
 }
 
 /// The heuristic value of a position that is not over, for the player to move.
@@ -128,5 +138,22 @@ mod tests {
         assert_eq!(pos.owner(4), Some(Player::X));
         // O to move: bad for O.
         assert!(evaluate(&pos, Variant::Classic, &Weights::default()) < -1000);
+    }
+
+    #[test]
+    fn win_in_one() {
+        let mut cells = ['.'; 81];
+        for m in [0, 1, 2, 9, 10, 11, 18, 19] {
+            cells[m] = 'x';
+        }
+        for m in [45, 46, 47, 54, 55, 56, 63, 64] {
+            cells[m] = 'o';
+        }
+        let cells: String = cells.iter().collect();
+        let pos: Position = format!("{cells}/xx...oo../x/2").parse().unwrap();
+        assert!(wins_now(&pos, Variant::Classic));
+        // Sent elsewhere, X cannot.
+        let pos: Position = format!("{cells}/xx...oo../x/3").parse().unwrap();
+        assert!(!wins_now(&pos, Variant::Classic));
     }
 }

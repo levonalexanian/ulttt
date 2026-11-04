@@ -43,6 +43,8 @@ pub struct Options {
     pub exact_max_empties: u32,
     /// The exact solver gets `1 / exact_share` of the node budget.
     pub exact_share: u64,
+    /// At the search horizon, recognize a win in one move before evaluating.
+    pub leaf_wins: bool,
     pub weights: Weights,
 }
 
@@ -53,6 +55,7 @@ impl Default for Options {
             exact_tt_bits: 18,
             exact_max_empties: 55,
             exact_share: 4,
+            leaf_wins: true,
             weights: Weights::default(),
         }
     }
@@ -60,7 +63,7 @@ impl Default for Options {
 
 impl Options {
     /// Parses comma-separated `key=value` settings on top of the defaults:
-    /// `tt`, `xtt`, `xmax`, `xshare`, and the weights `global`, `local`,
+    /// `tt`, `xtt`, `xmax`, `xshare`, `leafwin` (0 or 1), and the weights `global`, `local`,
     /// `majority`, `tempo`, `line1`, `line2`.
     pub fn parse(spec: &str) -> Result<Options, String> {
         let mut o = Options::default();
@@ -82,6 +85,7 @@ impl Options {
                 "tt" => o.tt_bits = int()?.clamp(4, 30),
                 "xtt" => o.exact_tt_bits = int()?.clamp(4, 30),
                 "xmax" => o.exact_max_empties = int()?,
+                "leafwin" => o.leaf_wins = int()? != 0,
                 "xshare" => o.exact_share = u64::from(int()?.max(1)),
                 "global" => o.weights.global = float()?,
                 "local" => o.weights.local = float()?,
