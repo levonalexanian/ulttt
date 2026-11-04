@@ -19,6 +19,8 @@ Build with `lake build` (CI runs it with `--wfail`, so warnings fail too).
 | `Ulttt/Symmetry.lean` | The 8 rotations and reflections of the grid |
 | `Ulttt/SymmetryRules.lean` | Symmetries preserve the rules and the game value |
 | `Ulttt/Fast.lean` | Faster rule functions, each proved equal to the specification |
+| `Ulttt/ValueFor.lean` | Values from one player's point of view and lemmas about them |
+| `Ulttt/MayWin.lean` | `mayWin`, when a player can no longer win, and its soundness proof |
 | `Ulttt/Certificate.lean` | The certificate checker `check` and its soundness proof |
 | `Main.lean` | `ulttt-ref`: the rules as an executable, for differential testing |
 | `Check.lean` | `ulttt-check`: checks certificate files with `check` |
@@ -35,6 +37,9 @@ Build with `lake build` (CI runs it with `--wfail`, so warnings fail too).
   preserves which moves are legal, commutes with playing, and keeps the result.
 - `value_map`: symmetric positions have the same value. This is what makes
   symmetry reduction in the solver sound.
+- `valueFor_le_zero_of_mayWin_false`: a player ruled out by `mayWin` can at
+  best draw. The solvers prune with the same rule (the Rust `may_win`, checked
+  equal by `ulttt-difftest`), and certificates stop early with it.
 - `check_sound`: if `check` accepts a certificate that player `p` can force at
   least `r`, then `r ≤ valueFor v p s`. Certificates are produced by the Rust
   solver (`ulttt certify`), which therefore does not need to be trusted.
