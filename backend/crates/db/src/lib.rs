@@ -14,7 +14,49 @@ pub use rusqlite::Error;
 pub type Result<T> = rusqlite::Result<T>;
 
 /// Schema migrations, applied in order. Never edit a released entry; append.
-const MIGRATIONS: &[&str] = &[include_str!("schema.sql"), include_str!("verified.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("schema.sql"),
+    include_str!("verified.sql"),
+    include_str!("matches.sql"),
+];
+
+/// What to record about a new match.
+#[derive(Clone, Debug)]
+pub struct NewMatch<'a> {
+    pub variant: Variant,
+    pub engine_a: &'a str,
+    pub engine_b: &'a str,
+    pub node_limit: u64,
+    pub git_rev: &'a str,
+    pub notes: &'a str,
+}
+
+/// One finished game of a match.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchGame {
+    pub idx: usize,
+    pub opening: Position,
+    pub a_is_x: bool,
+    /// For engine A: 1 win, 0 draw, -1 loss.
+    pub score: i8,
+    pub plies: u32,
+    pub micros: u64,
+}
+
+/// Totals for one match.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchSummary {
+    pub id: i64,
+    pub variant: String,
+    pub engine_a: String,
+    pub engine_b: String,
+    pub node_limit: u64,
+    pub git_rev: String,
+    pub started_at: String,
+    pub a_wins: u64,
+    pub draws: u64,
+    pub b_wins: u64,
+}
 
 /// A benchmark suite.
 #[derive(Clone, Debug, PartialEq)]
@@ -173,6 +215,77 @@ impl Db {
     pub fn suite_names(&self) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare("SELECT name FROM suites ORDER BY id")?;
         stmt.query_map([], |r| r.get(0))?.collect()
+    }
+
+    /// Records the start of a match and returns its id.
+    pub fn start_match(&self, m: &NewMatch) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO matches (variant, engine_a, engine_b, node_limit, git_rev, notes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                m.variant.name(),
+                m.engine_a,
+                m.engine_b,
+                m.node_limit as i64,
+                m.git_rev,
+                m.notes
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Records one game of a match.
+    pub fn record_game(&self, match_id: i64, g: &MatchGame) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO match_games (match_id, idx, opening, a_is_x, score, plies, micros)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                match_id,
+                g.idx as i64,
+                g.opening.to_string(),
+                g.a_is_x,
+                g.score,
+                g.plies,
+                g.micros as i64
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Marks a match as finished.
+    pub fn finish_match(&self, match_id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE matches SET finished_at = datetime('now') WHERE id = ?1",
+            params![match_id],
+        )?;
+        Ok(())
+    }
+
+    /// Totals of the most recent matches, newest first.
+    pub fn match_summaries(&self, limit: usize) -> Result<Vec<MatchSummary>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.variant, m.engine_a, m.engine_b, m.node_limit, m.git_rev,
+                    m.started_at,
+                    COALESCE(SUM(g.score = 1), 0), COALESCE(SUM(g.score = 0), 0),
+                    COALESCE(SUM(g.score = -1), 0)
+             FROM matches m LEFT JOIN match_games g ON g.match_id = m.id
+             GROUP BY m.id ORDER BY m.id DESC LIMIT ?1",
+        )?;
+        stmt.query_map(params![limit as i64], |r| {
+            Ok(MatchSummary {
+                id: r.get(0)?,
+                variant: r.get(1)?,
+                engine_a: r.get(2)?,
+                engine_b: r.get(3)?,
+                node_limit: r.get::<_, i64>(4)? as u64,
+                git_rev: r.get(5)?,
+                started_at: r.get(6)?,
+                a_wins: r.get::<_, i64>(7)? as u64,
+                draws: r.get::<_, i64>(8)? as u64,
+                b_wins: r.get::<_, i64>(9)? as u64,
+            })
+        })?
+        .collect()
     }
 
     /// Records the start of a run and returns its id.
@@ -446,5 +559,35 @@ mod tests {
         let summary = db.summary().unwrap();
         assert_eq!((summary.suites, summary.runs), (1, 1));
         assert_eq!(summary.solved, [("open".to_string(), 1)]);
+    }
+
+    #[test]
+    fn matches() {
+        let db = Db::open_in_memory().unwrap();
+        let id = db
+            .start_match(&NewMatch {
+                variant: Variant::Classic,
+                engine_a: "engine",
+                engine_b: "engine:tempo=0",
+                node_limit: 1000,
+                git_rev: "abc",
+                notes: "",
+            })
+            .unwrap();
+        for (idx, score) in [1, 1, 0, -1].into_iter().enumerate() {
+            let g = MatchGame {
+                idx,
+                opening: Position::new(),
+                a_is_x: idx % 2 == 0,
+                score,
+                plies: 40,
+                micros: 10,
+            };
+            db.record_game(id, &g).unwrap();
+        }
+        db.finish_match(id).unwrap();
+        let m = &db.match_summaries(10).unwrap()[0];
+        assert_eq!((m.a_wins, m.draws, m.b_wins), (2, 1, 1));
+        assert_eq!(m.engine_b, "engine:tempo=0");
     }
 }
