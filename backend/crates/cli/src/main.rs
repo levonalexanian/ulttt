@@ -1,15 +1,22 @@
 //! `ulttt`: command-line interface to the engine and solver.
 
+mod bench;
+
+use std::path::PathBuf;
+use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::{Parser, Subcommand};
+use ulttt_db::Db;
 use ulttt_game::random::Rng;
 use ulttt_game::{Position, Variant, perft};
-use ulttt_solver::{AlphaBeta, Solver};
 
 #[derive(Parser)]
 #[command(name = "ulttt", about = "Ultimate Tic-Tac-Toe engine and solver")]
 struct Cli {
+    /// SQLite database for suites, runs and solved positions.
+    #[arg(long, global = true, default_value = "data/ulttt.db")]
+    db: PathBuf,
     #[command(subcommand)]
     command: Command,
 }
@@ -45,13 +52,52 @@ enum Command {
     Solve {
         #[arg(short, long, default_value = "classic")]
         variant: Variant,
+        /// Solver to use.
+        #[arg(long, default_value = "alphabeta")]
+        solver: String,
+        /// Give up after this many positions.
+        #[arg(long)]
+        node_limit: Option<u64>,
         /// Position in the text notation; the empty board by default.
         position: Option<Position>,
     },
+    /// Create a benchmark suite of random positions.
+    SuiteCreate {
+        name: String,
+        #[arg(short, long, default_value = "classic")]
+        variant: Variant,
+        /// Number of random moves played from the start.
+        #[arg(long)]
+        plies: usize,
+        /// Number of positions.
+        #[arg(short = 'n', long, default_value_t = 20)]
+        count: usize,
+        #[arg(short, long, default_value_t = 1)]
+        seed: u64,
+    },
+    /// List benchmark suites.
+    Suites,
+    /// Run a solver over a suite and record the results.
+    Bench(bench::BenchArgs),
+    /// Show recent benchmark runs.
+    Runs {
+        /// Only runs of this suite.
+        suite: Option<String>,
+        #[arg(short = 'n', long, default_value_t = 20)]
+        limit: usize,
+    },
 }
 
-fn main() {
-    match Cli::parse().command {
+fn open_db(path: &PathBuf) -> Db {
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).expect("create database directory");
+    }
+    Db::open(path).expect("open database")
+}
+
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    match cli.command {
         Command::Perft {
             variant,
             depth,
@@ -75,26 +121,73 @@ fn main() {
             seed,
         } => {
             let mut rng = Rng::new(seed);
-            let mut found = 0;
-            while found < count {
-                if let Some(pos) = rng.position(variant, plies) {
-                    println!("{pos}");
-                    found += 1;
-                }
+            for pos in random_positions(&mut rng, variant, plies, count) {
+                println!("{pos}");
             }
         }
-        Command::Solve { variant, position } => {
+        Command::Solve {
+            variant,
+            solver,
+            node_limit,
+            position,
+        } => {
             let pos = position.unwrap_or_default();
-            let mut solver = AlphaBeta::new();
+            let Some(mut solver) = ulttt_solver::by_name(&solver) else {
+                eprintln!(
+                    "unknown solver {solver:?}; known: {:?}",
+                    ulttt_solver::SOLVERS
+                );
+                return ExitCode::FAILURE;
+            };
+            solver.set_node_limit(node_limit);
             let start = Instant::now();
-            let value = solver.solve(&pos, variant).expect("no node limit");
+            let value = solver.solve(&pos, variant);
             let secs = start.elapsed().as_secs_f64();
             let nodes = solver.stats().nodes;
             println!(
                 "value {}  nodes {nodes}  {secs:.3}s  {:.1} Mnodes/s",
-                value.name(),
+                value.map_or("unknown", |v| v.name()),
                 nodes as f64 / secs.max(1e-9) / 1e6
             );
         }
+        Command::SuiteCreate {
+            name,
+            variant,
+            plies,
+            count,
+            seed,
+        } => {
+            let mut db = open_db(&cli.db);
+            let mut rng = Rng::new(seed);
+            let positions = random_positions(&mut rng, variant, plies, count);
+            let description = format!("{count} positions after {plies} random moves, seed {seed}");
+            db.create_suite(&name, variant, &description, &positions)
+                .expect("create suite");
+            println!("created suite {name}: {description}");
+        }
+        Command::Suites => {
+            let db = open_db(&cli.db);
+            for name in db.suite_names().expect("list suites") {
+                let suite = db.suite(&name).expect("read suite").expect("suite exists");
+                println!("{name:<24} {:<9} {}", suite.variant, suite.description);
+            }
+        }
+        Command::Bench(args) => return bench::run(&mut open_db(&cli.db), &args),
+        Command::Runs { suite, limit } => {
+            let db = open_db(&cli.db);
+            bench::print_runs(&db, suite.as_deref(), limit);
+        }
     }
+    ExitCode::SUCCESS
+}
+
+/// `count` random non-terminal positions after `plies` random moves.
+fn random_positions(rng: &mut Rng, v: Variant, plies: usize, count: usize) -> Vec<Position> {
+    let mut out = Vec::with_capacity(count);
+    while out.len() < count {
+        if let Some(pos) = rng.position(v, plies) {
+            out.push(pos);
+        }
+    }
+    out
 }
