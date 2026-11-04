@@ -126,7 +126,7 @@ fn with_engine<T>(v: Variant, f: impl FnOnce(&mut Engine) -> T) -> T {
                 ulttt_engine::Options {
                     tt_bits: ENGINE_TT_BITS,
                     exact_tt_bits: ENGINE_EXACT_TT_BITS,
-                    ..Default::default()
+                    ..ulttt_engine::Options::for_variant(v)
                 },
             ));
         }

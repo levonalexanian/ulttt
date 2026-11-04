@@ -49,13 +49,13 @@ impl Agent for Mcts {
 
 /// An agent from a spec: `mcts` or `mcts:<settings>` (see
 /// [`MctsOptions::parse`]), otherwise alpha-beta settings for
-/// [`Options::parse`] (empty for the defaults).
+/// [`Options::parse_for`] (empty for the variant's defaults).
 pub fn agent(v: Variant, spec: &str) -> Result<Box<dyn Agent>, String> {
     match spec.strip_prefix("mcts") {
         Some(rest) if rest.is_empty() || rest.starts_with(':') => {
             let opts = MctsOptions::parse(rest.trim_start_matches(':'))?;
             Ok(Box::new(Mcts::new(v, opts)))
         }
-        _ => Ok(Box::new(Engine::new(v, Options::parse(spec)?))),
+        _ => Ok(Box::new(Engine::new(v, Options::parse_for(v, spec)?))),
     }
 }
