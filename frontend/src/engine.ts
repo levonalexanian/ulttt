@@ -65,6 +65,16 @@ class Engine {
   bestMove(variant: Variant, pos: string, nodeLimit: number) {
     return this.call<number>({ fn: "bestMove", variant, pos, nodeLimit });
   }
+  /** The engine's move after thinking for about `ms` milliseconds. */
+  async think(variant: Variant, pos: string, ms: number): Promise<Thought> {
+    const [move, score, depth, value, nodes] = await this.call<number[]>({ fn: "think", variant, pos, ms });
+    return { move, score, depth, value: value as Value, nodes };
+  }
 }
+
+/** What `think` found: the move (-1 if the game is over), its score for the
+ * mover (beyond ±999000 a forced result), search depth, the exact value if
+ * known, and positions searched. */
+export type Thought = { move: number; score: number; depth: number; value: Value; nodes: number };
 
 export const engine = new Engine();
