@@ -20,14 +20,19 @@ impl Ordered {
 pub fn winning_move(pos: &Position, legal: u128) -> Option<Move> {
     let me = pos.to_move();
     let mine = pos.owned_by(me);
-    let unowned = !(mine | pos.owned_by(me.other()));
-    for m in Moves(legal) {
-        let b = board_of(m);
-        if unowned >> b & 1 != 0
-            && has_line(mine | 1 << b)
-            && pos.local_threats(me, b) >> cell_of(m) & 1 != 0
-        {
-            return Some(m);
+    let unowned = !(mine | pos.owned_by(me.other())) & 0x1FF;
+    // Only boards that would complete a global line matter: at most a few.
+    let mut boards = unowned;
+    while boards != 0 {
+        let b = boards.trailing_zeros() as u8;
+        boards &= boards - 1;
+        if !has_line(mine | 1 << b) {
+            continue;
+        }
+        let legal_here = (legal >> (9 * b as u32)) as u16 & 0x1FF;
+        let wins = pos.local_threats(me, b) & legal_here;
+        if wins != 0 {
+            return Some(9 * b + wins.trailing_zeros() as u8);
         }
     }
     None
@@ -79,4 +84,31 @@ pub fn order(
         moves[i] = m;
     }
     Ordered { moves, len }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ulttt_game::random::Rng;
+
+    /// `winning_move` finds a move exactly when some legal move wins at once.
+    #[test]
+    fn winning_move_matches_brute_force() {
+        let mut rng = Rng::new(21);
+        for i in 0..3000 {
+            let v = Variant::ALL[i % 3];
+            let game = rng.game(v);
+            let mut pos = Position::new();
+            for &m in &game {
+                let legal = pos.legal_moves(v);
+                let brute = Moves(legal).find(|&w| pos.after(w).global_line(pos.to_move()));
+                let found = winning_move(&pos, legal);
+                assert_eq!(found.is_some(), brute.is_some(), "{v} {pos}");
+                if let Some(w) = found {
+                    assert!(legal >> w & 1 != 0 && pos.after(w).global_line(pos.to_move()));
+                }
+                pos.play(m);
+            }
+        }
+    }
 }
