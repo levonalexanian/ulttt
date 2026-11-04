@@ -167,7 +167,9 @@ fn check_values(reference: &str, count: usize, rng: &mut Rng) -> bool {
         .collect();
     let mut lean = Reference::start(reference, input);
     for (v, moves) in &cases {
-        let want = AlphaBeta::new().solve(&play_all(moves), *v) as i8;
+        let want = AlphaBeta::new()
+            .solve(&play_all(moves), *v)
+            .expect("no node limit") as i8;
         let got = lean.next_line();
         if got != want.to_string() {
             eprintln!("VALUE MISMATCH ({v}) after {:?}", moves);

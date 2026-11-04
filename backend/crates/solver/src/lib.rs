@@ -44,8 +44,15 @@ pub struct Stats {
 
 /// A solver computes exact values.
 pub trait Solver {
-    /// The value of `pos` under perfect play in variant `v`.
-    fn solve(&mut self, pos: &Position, v: Variant) -> Value;
+    /// A short name identifying the solver and its configuration.
+    fn name(&self) -> String;
+
+    /// Stop searches after visiting this many positions. `None` means no limit.
+    fn set_node_limit(&mut self, limit: Option<u64>);
+
+    /// The value of `pos` under perfect play in variant `v`, or `None` if the
+    /// node limit was reached first.
+    fn solve(&mut self, pos: &Position, v: Variant) -> Option<Value>;
 
     /// Counters for the searches run so far.
     fn stats(&self) -> Stats;
