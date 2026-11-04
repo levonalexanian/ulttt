@@ -201,24 +201,41 @@ impl Engine {
             .ordered(pos, candidates, NO_MOVE, 0)
             .as_slice()
             .to_vec();
-        let mut best = (moves[0], 0, 0);
+        let mut best: (Move, i32, u32) = (moves[0], 0, 0);
         if moves.len() == 1 {
             // Still worth a score for the caller; a shallow search is enough.
             self.limit = limit.min(10_000);
         }
         for depth in 1..=pos.empties() {
-            let (mut alpha, beta) = (-WIN - 1, WIN + 1);
-            let mut iteration_best = None;
-            for (i, &m) in moves.iter().enumerate() {
-                let child = pos.after(m);
-                let s = -self.negamax(&child, depth - 1, -beta, -alpha, 1);
-                if self.aborted {
+            // Aspiration window: expect a score near the last iteration's and
+            // search the full window again only if it falls outside.
+            let window = self.opts.aspiration as i32;
+            let narrow = window > 0 && depth >= 4 && best.1.abs() < WIN_THRESHOLD;
+            let mut bounds = if narrow {
+                (best.1 - window, best.1 + window)
+            } else {
+                (-WIN - 1, WIN + 1)
+            };
+            let mut iteration_best;
+            loop {
+                let (mut alpha, beta) = bounds;
+                iteration_best = None;
+                for (i, &m) in moves.iter().enumerate() {
+                    let child = pos.after(m);
+                    let s = -self.negamax(&child, depth - 1, -beta, -alpha, 1);
+                    if self.aborted {
+                        break;
+                    }
+                    if i == 0 || s > alpha {
+                        alpha = s;
+                        iteration_best = Some((m, s));
+                    }
+                }
+                let failed = iteration_best.is_some_and(|(_, s)| s <= bounds.0 || s >= bounds.1);
+                if self.aborted || !failed || bounds == (-WIN - 1, WIN + 1) {
                     break;
                 }
-                if i == 0 || s > alpha {
-                    alpha = s;
-                    iteration_best = Some((m, s));
-                }
+                bounds = (-WIN - 1, WIN + 1);
             }
             if self.aborted {
                 // A partial iteration still counts if its best move was
