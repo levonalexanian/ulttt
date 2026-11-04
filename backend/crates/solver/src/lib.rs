@@ -5,6 +5,17 @@ mod alphabeta;
 
 pub use alphabeta::AlphaBeta;
 
+/// Names accepted by [`by_name`].
+pub const SOLVERS: &[&str] = &["alphabeta"];
+
+/// A fresh solver by name.
+pub fn by_name(name: &str) -> Option<Box<dyn Solver>> {
+    match name {
+        "alphabeta" => Some(Box::new(AlphaBeta::new())),
+        _ => None,
+    }
+}
+
 use ulttt_game::{Player, Position, Variant};
 
 /// The value of a position under perfect play, from X's point of view.
