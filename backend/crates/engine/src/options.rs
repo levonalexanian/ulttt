@@ -72,7 +72,18 @@ impl Weights {
                 line2: 8.213,
                 ..base
             },
-            Variant::Open | Variant::Majority => base,
+            // +38 ±22 Elo against the untuned weights (800 games, 20k nodes).
+            Variant::Majority => Weights {
+                global: 7376.0,
+                local: 246.5,
+                majority: 1630.0,
+                tempo: 2043.0,
+                line1: 2.356,
+                line2: 12.92,
+                ..base
+            },
+            // Tuned weights were not significantly better (+10 ±22).
+            Variant::Open => base,| Variant::Majority => base,
         }
     }
 }
