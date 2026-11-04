@@ -4,6 +4,7 @@ import Ulttt.Rules
 import Ulttt.Value
 import Ulttt.Theorems
 import Ulttt.Fast
+import Ulttt.Certificate
 import Ulttt.Examples
 import Ulttt.Symmetry
 import Ulttt.SymmetryRules
