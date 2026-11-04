@@ -11,25 +11,9 @@ use std::io::{BufRead, BufReader, Lines, Write};
 use std::process::{Child, ChildStdout, Command, ExitCode, Stdio};
 use std::thread;
 
+use ulttt_game::random::Rng;
 use ulttt_game::{Move, Moves, Outcome, Player, Position, Variant};
 use ulttt_solver::{AlphaBeta, Solver};
-
-/// SplitMix64: a small, fast, seedable generator; good enough for random games.
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-
-    fn below(&mut self, n: usize) -> usize {
-        (self.next() % n as u64) as usize
-    }
-}
 
 /// The description of a position in the reference executable's output format.
 fn describe(v: Variant, pos: &Position) -> String {
@@ -44,21 +28,6 @@ fn describe(v: Variant, pos: &Position) -> String {
         Some(Outcome::Draw) => "d",
     };
     format!("{}|{owners}|{result}", legal.join(","))
-}
-
-/// A random game played to the end.
-fn random_game(v: Variant, rng: &mut Rng) -> Vec<Move> {
-    let mut pos = Position::new();
-    let mut moves = Vec::new();
-    loop {
-        let legal: Vec<Move> = Moves(pos.legal_moves(v)).collect();
-        if legal.is_empty() {
-            return moves;
-        }
-        let m = legal[rng.below(legal.len())];
-        pos.play(m);
-        moves.push(m);
-    }
 }
 
 fn play_all(moves: &[Move]) -> Position {
@@ -146,7 +115,7 @@ fn check_rules(reference: &str, games: usize, rng: &mut Rng) -> bool {
     let cases: Vec<(Variant, Vec<Move>)> = (0..games)
         .map(|i| {
             let v = Variant::ALL[i % Variant::ALL.len()];
-            (v, random_game(v, rng))
+            (v, rng.game(v))
         })
         .collect();
     let input = cases
@@ -185,7 +154,7 @@ fn check_values(reference: &str, count: usize, rng: &mut Rng) -> bool {
     let mut cases: Vec<(Variant, Vec<Move>)> = Vec::new();
     while cases.len() < count {
         let v = Variant::ALL[cases.len() % Variant::ALL.len()];
-        let game = random_game(v, rng);
+        let game = rng.game(v);
         let back = 1 + rng.below(12.min(game.len()));
         let moves = game[..game.len() - back].to_vec();
         if tree_size(&play_all(&moves), v, 3_000).is_some() {
@@ -222,7 +191,7 @@ fn main() -> ExitCode {
     let seed: u64 = args.get(3).map_or(1, |s| s.parse().expect("seed"));
     println!("seed {seed}");
 
-    let mut rng = Rng(seed);
+    let mut rng = Rng::new(seed);
     if check_rules(reference, games, &mut rng) && check_values(reference, games / 30, &mut rng) {
         ExitCode::SUCCESS
     } else {
