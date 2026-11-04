@@ -2,6 +2,7 @@
 
 mod bench;
 mod play;
+mod texel;
 mod verify;
 
 use std::path::PathBuf;
@@ -103,6 +104,8 @@ enum Command {
         #[arg(short = 'n', long, default_value_t = 10)]
         count: usize,
     },
+    /// Tune the evaluation weights on the recorded games of matches.
+    Texel(texel::TexelArgs),
     /// Show recent engine matches.
     Matches {
         #[arg(short = 'n', long, default_value_t = 20)]
@@ -283,6 +286,7 @@ fn main() -> ExitCode {
             nodes,
             count,
         } => return play::bench(&engine, variant, nodes, count),
+        Command::Texel(args) => return texel::run(&open_db(&cli.db), &args),
         Command::Matches { limit } => return play::list(&open_db(&cli.db), limit),
         Command::Compare { a, b } => return bench::print_compare(&open_db(&cli.db), a, b),
         Command::Summary => {
