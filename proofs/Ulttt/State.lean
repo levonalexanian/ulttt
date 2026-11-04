@@ -32,7 +32,7 @@ def Move.cell (m : Move) : Fin 9 := ⟨m.val % 9, by omega⟩
 Ownership of local boards is stored rather than derived from the cells: in the
 `open` variant a won board stays playable, and its owner is whoever completed a
 line on it first, even if the other player later completes one too. -/
-structure State where
+@[ext] structure State where
   /-- Contents of each of the 81 cells. -/
   cells : Move → Option Player
   /-- Owner of each local board, set the first time a player completes a line on it. -/
