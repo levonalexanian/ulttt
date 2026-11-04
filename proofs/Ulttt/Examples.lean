@@ -51,4 +51,23 @@ example : (playAll oLineOnWonBoard).owner 0 = some .X := by decide
 -- In `classic` the same moves are illegal: board 0 closed when X won it.
 example : allLegal .classic oLineOnWonBoard = false := by decide
 
+/-- A finished game without a global line: X owns boards 0, 1, 5 and 6, O owns
+2, 3 and 7, and boards 4 and 8 are full and drawn. (Only ownership and fullness
+matter here, so every cell is simply marked by X.) -/
+def noLineFinish : State where
+  cells _ := some .X
+  owner b := match b.val with
+    | 0 | 1 | 5 | 6 => some .X
+    | 2 | 3 | 7 => some .O
+    | _ => none
+  toMove := .O
+  sent := some 4
+
+-- The game is over in `classic` and `majority`: every board is won or full.
+example : noLineFinish.terminal .classic = true := by decide
+example : noLineFinish.terminal .majority = true := by decide
+-- Nobody has three in a row: `classic` is a draw, `majority` goes to X, 4 boards to 3.
+example : noLineFinish.outcome .classic = .draw := by decide
+example : noLineFinish.outcome .majority = .win .X := by decide
+
 end Ulttt
