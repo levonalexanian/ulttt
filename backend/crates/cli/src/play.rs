@@ -3,7 +3,7 @@
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use clap::Args;
 use ulttt_db::{Db, MatchGame, MatchSummary, NewMatch};
@@ -25,6 +25,10 @@ pub struct MatchArgs {
     /// Nodes each engine may search per move.
     #[arg(long, default_value_t = 20_000)]
     nodes: u64,
+    /// Also limit each move to this many milliseconds. The exact solver still
+    /// gets its share of the node limit, so raise `--nodes` to match.
+    #[arg(long)]
+    ms: Option<u64>,
     /// Number of openings; each is played twice, once with each engine as X.
     #[arg(short = 'n', long, default_value_t = 50)]
     openings: usize,
@@ -50,12 +54,17 @@ fn play_game(
     x: &Options,
     o: &Options,
     nodes: u64,
+    ms: Option<u64>,
 ) -> (Outcome, u32) {
     let mut engines = [Engine::new(v, *x), Engine::new(v, *o)];
     let mut pos = *opening;
     let mut plies = 0;
     while !pos.is_terminal(v) {
         let side = pos.to_move().index();
+        if let Some(ms) = ms {
+            let deadline = Instant::now() + Duration::from_millis(ms);
+            engines[side].set_stop(Some(Box::new(move || Instant::now() >= deadline)));
+        }
         let choice = engines[side].best_move(&pos, nodes).expect("game not over");
         pos.play(choice.mv);
         plies += 1;
@@ -111,6 +120,7 @@ pub fn run(db: &Db, args: &MatchArgs) -> ExitCode {
             engine_a: &label_a,
             engine_b: &label_b,
             node_limit: args.nodes,
+            ms: args.ms,
             git_rev: &args.rev,
             notes: &args.notes,
         })
@@ -133,7 +143,7 @@ pub fn run(db: &Db, args: &MatchArgs) -> ExitCode {
                     let a_is_x = idx % 2 == 0;
                     let (x, o) = if a_is_x { (&a, &b) } else { (&b, &a) };
                     let t = Instant::now();
-                    let (outcome, plies) = play_game(v, &opening, x, o, args.nodes);
+                    let (outcome, plies) = play_game(v, &opening, x, o, args.nodes, args.ms);
                     let a_player = if a_is_x { Player::X } else { Player::O };
                     let score = match outcome {
                         Outcome::Win(p) if p == a_player => 1,
@@ -184,9 +194,13 @@ fn print_summary(m: &MatchSummary) {
         let (d, margin) = elo(&scores);
         format!("{d:+5.0} ± {margin:3.0} Elo")
     };
+    let limit = match m.ms {
+        Some(ms) => format!("{ms} ms"),
+        None => format!("{} nodes", m.node_limit),
+    };
     println!(
-        "#{:<4} {:<8} {:>8} nodes  A +{} ={} -{}  {elo}  A {} vs B {}",
-        m.id, m.variant, m.node_limit, m.a_wins, m.draws, m.b_wins, m.engine_a, m.engine_b
+        "#{:<4} {:<8} {limit:>14}  A +{} ={} -{}  {elo}  A {} vs B {}",
+        m.id, m.variant, m.a_wins, m.draws, m.b_wins, m.engine_a, m.engine_b
     );
 }
 

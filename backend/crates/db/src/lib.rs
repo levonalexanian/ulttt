@@ -18,6 +18,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("schema.sql"),
     include_str!("verified.sql"),
     include_str!("matches.sql"),
+    include_str!("match_time.sql"),
 ];
 
 /// What to record about a new match.
@@ -27,6 +28,8 @@ pub struct NewMatch<'a> {
     pub engine_a: &'a str,
     pub engine_b: &'a str,
     pub node_limit: u64,
+    /// Milliseconds per move, if moves are limited by time.
+    pub ms: Option<u64>,
     pub git_rev: &'a str,
     pub notes: &'a str,
 }
@@ -51,6 +54,7 @@ pub struct MatchSummary {
     pub engine_a: String,
     pub engine_b: String,
     pub node_limit: u64,
+    pub ms: Option<u64>,
     pub git_rev: String,
     pub started_at: String,
     pub a_wins: u64,
@@ -220,15 +224,16 @@ impl Db {
     /// Records the start of a match and returns its id.
     pub fn start_match(&self, m: &NewMatch) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO matches (variant, engine_a, engine_b, node_limit, git_rev, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO matches (variant, engine_a, engine_b, node_limit, git_rev, notes, ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 m.variant.name(),
                 m.engine_a,
                 m.engine_b,
                 m.node_limit as i64,
                 m.git_rev,
-                m.notes
+                m.notes,
+                m.ms.map(|ms| ms as i64)
             ],
         )?;
         Ok(self.conn.last_insert_rowid())
@@ -267,7 +272,7 @@ impl Db {
             "SELECT m.id, m.variant, m.engine_a, m.engine_b, m.node_limit, m.git_rev,
                     m.started_at,
                     COALESCE(SUM(g.score = 1), 0), COALESCE(SUM(g.score = 0), 0),
-                    COALESCE(SUM(g.score = -1), 0)
+                    COALESCE(SUM(g.score = -1), 0), m.ms
              FROM matches m LEFT JOIN match_games g ON g.match_id = m.id
              GROUP BY m.id ORDER BY m.id DESC LIMIT ?1",
         )?;
@@ -283,6 +288,7 @@ impl Db {
                 a_wins: r.get::<_, i64>(7)? as u64,
                 draws: r.get::<_, i64>(8)? as u64,
                 b_wins: r.get::<_, i64>(9)? as u64,
+                ms: r.get::<_, Option<i64>>(10)?.map(|ms| ms as u64),
             })
         })?
         .collect()
@@ -570,6 +576,7 @@ mod tests {
                 engine_a: "engine",
                 engine_b: "engine:tempo=0",
                 node_limit: 1000,
+                ms: Some(5),
                 git_rev: "abc",
                 notes: "",
             })
