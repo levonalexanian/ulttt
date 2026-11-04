@@ -48,6 +48,7 @@ pub struct Engine {
     aborted: bool,
     exact: Search,
     opts: Options,
+    stop: Option<Box<dyn Fn() -> bool>>,
 }
 
 impl Engine {
@@ -64,7 +65,15 @@ impl Engine {
                 ..ExactOptions::default()
             }),
             opts,
+            stop: None,
         }
+    }
+
+    /// A condition checked during the heuristic search (every 1024 positions)
+    /// that ends it early, e.g. a clock. The node limit still applies, and the
+    /// exact solver only has its share of it.
+    pub fn set_stop(&mut self, stop: Option<Box<dyn Fn() -> bool>>) {
+        self.stop = stop;
     }
 
     pub fn options(&self) -> &Options {
@@ -225,7 +234,9 @@ impl Engine {
         ply: i32,
     ) -> i32 {
         self.nodes += 1;
-        if self.nodes >= self.limit {
+        if self.nodes >= self.limit
+            || (self.nodes.is_multiple_of(1024) && self.stop.as_ref().is_some_and(|stop| stop()))
+        {
             self.aborted = true;
             return 0;
         }
