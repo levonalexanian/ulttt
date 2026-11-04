@@ -1,6 +1,8 @@
 //! Engine settings, parseable from a short text spec so matches can compare
 //! configurations without recompiling.
 
+use ulttt_game::Variant;
+
 /// Weights of the heuristic evaluation.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Weights {
@@ -51,6 +53,26 @@ impl Default for Weights {
             base: 0.5,
             fill: 0.4,
             prior: 4.0,
+        }
+    }
+}
+
+impl Weights {
+    /// The default weights for variant `v`, tuned on self-play games with
+    /// `ulttt texel` and kept only where a match confirmed them.
+    pub fn for_variant(v: Variant) -> Weights {
+        let base = Weights::default();
+        match v {
+            // +37 ±18 Elo against the untuned weights (800 games, 20k nodes).
+            Variant::Classic => Weights {
+                global: 10_133.0,
+                local: 70.9,
+                tempo: 1511.0,
+                line1: 2.131,
+                line2: 8.213,
+                ..base
+            },
+            Variant::Open | Variant::Majority => base,
         }
     }
 }
@@ -109,7 +131,23 @@ impl Options {
     /// Parses comma-separated `key=value` settings on top of the defaults. The
     /// keys are in the `match` below; flags take `0` or `1`.
     pub fn parse(spec: &str) -> Result<Options, String> {
-        let mut o = Options::default();
+        Options::parse_onto(Options::default(), spec)
+    }
+
+    /// The default settings for variant `v` (see [`Weights::for_variant`]).
+    pub fn for_variant(v: Variant) -> Options {
+        Options {
+            weights: Weights::for_variant(v),
+            ..Options::default()
+        }
+    }
+
+    /// Like [`Options::parse`], on top of the defaults for variant `v`.
+    pub fn parse_for(v: Variant, spec: &str) -> Result<Options, String> {
+        Options::parse_onto(Options::for_variant(v), spec)
+    }
+
+    fn parse_onto(mut o: Options, spec: &str) -> Result<Options, String> {
         for part in spec.split(',').filter(|p| !p.is_empty()) {
             let (key, value) = part
                 .split_once('=')

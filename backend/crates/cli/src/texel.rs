@@ -126,7 +126,7 @@ fn spec(w: &Weights) -> String {
 }
 
 pub fn run(db: &Db, args: &TexelArgs) -> ExitCode {
-    let opts = match Options::parse(&args.engine) {
+    let opts = match Options::parse_for(args.variant, &args.engine) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("{e}");
