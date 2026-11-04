@@ -7,14 +7,14 @@ use std::time::{Duration, Instant};
 
 use clap::Args;
 use ulttt_db::{Db, MatchGame, MatchSummary, NewMatch};
-use ulttt_engine::{Engine, Options};
+use ulttt_engine::Agent;
 use ulttt_game::random::Rng;
 use ulttt_game::{Outcome, Player, Position, Variant};
 
 #[derive(Args)]
 pub struct MatchArgs {
-    /// Settings of engine A, as in `Options::parse` (e.g. `tempo=0,tt=16`);
-    /// empty for the defaults.
+    /// Engine A: alpha-beta settings as in `Options::parse` (e.g.
+    /// `tempo=0,tt=16`, empty for the defaults), or `mcts[:<settings>]`.
     #[arg(short = 'a', long, default_value = "")]
     engine_a: String,
     /// Settings of engine B.
@@ -25,8 +25,7 @@ pub struct MatchArgs {
     /// Nodes each engine may search per move.
     #[arg(long, default_value_t = 20_000)]
     nodes: u64,
-    /// Also limit each move to this many milliseconds. The exact solver still
-    /// gets its share of the node limit, so raise `--nodes` to match.
+    /// Also limit each move to this many milliseconds.
     #[arg(long)]
     ms: Option<u64>,
     /// Number of openings; each is played twice, once with each engine as X.
@@ -51,19 +50,25 @@ pub struct MatchArgs {
 fn play_game(
     v: Variant,
     opening: &Position,
-    x: &Options,
-    o: &Options,
+    x: &str,
+    o: &str,
     nodes: u64,
     ms: Option<u64>,
 ) -> (Outcome, u32) {
-    let mut engines = [Engine::new(v, *x), Engine::new(v, *o)];
+    let mut engines: [Box<dyn Agent>; 2] = [
+        ulttt_engine::agent(v, x).expect("checked"),
+        ulttt_engine::agent(v, o).expect("checked"),
+    ];
     let mut pos = *opening;
     let mut plies = 0;
     while !pos.is_terminal(v) {
         let side = pos.to_move().index();
         if let Some(ms) = ms {
-            let deadline = Instant::now() + Duration::from_millis(ms);
-            engines[side].set_stop(Some(Box::new(move || Instant::now() >= deadline)));
+            let start = Instant::now();
+            let total = Duration::from_millis(ms).as_secs_f32();
+            engines[side].set_clock(Some(Box::new(move || {
+                start.elapsed().as_secs_f32() / total
+            })));
         }
         let choice = engines[side].best_move(&pos, nodes).expect("game not over");
         pos.play(choice.mv);
@@ -76,6 +81,8 @@ fn play_game(
 fn label(spec: &str) -> String {
     if spec.is_empty() {
         "engine".into()
+    } else if spec.starts_with("mcts") {
+        spec.into()
     } else {
         format!("engine:{spec}")
     }
@@ -95,17 +102,15 @@ pub fn elo(scores: &[f64]) -> (f64, f64) {
 }
 
 pub fn run(db: &Db, args: &MatchArgs) -> ExitCode {
-    let (a, b) = match (
-        Options::parse(&args.engine_a),
-        Options::parse(&args.engine_b),
-    ) {
-        (Ok(a), Ok(b)) => (a, b),
+    let v = args.variant;
+    let (a, b) = (args.engine_a.as_str(), args.engine_b.as_str());
+    match (ulttt_engine::agent(v, a), ulttt_engine::agent(v, b)) {
+        (Ok(_), Ok(_)) => {}
         (Err(e), _) | (_, Err(e)) => {
             eprintln!("{e}");
             return ExitCode::FAILURE;
         }
-    };
-    let v = args.variant;
+    }
     let mut rng = Rng::new(args.seed);
     let mut openings = Vec::new();
     while openings.len() < args.openings {
@@ -141,7 +146,7 @@ pub fn run(db: &Db, args: &MatchArgs) -> ExitCode {
                     }
                     let opening = openings[idx / 2];
                     let a_is_x = idx % 2 == 0;
-                    let (x, o) = if a_is_x { (&a, &b) } else { (&b, &a) };
+                    let (x, o) = if a_is_x { (a, b) } else { (b, a) };
                     let t = Instant::now();
                     let (outcome, plies) = play_game(v, &opening, x, o, args.nodes, args.ms);
                     let a_player = if a_is_x { Player::X } else { Player::O };
