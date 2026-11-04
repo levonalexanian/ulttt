@@ -18,6 +18,10 @@ Build with `lake build` (CI runs it with `--wfail`, so warnings fail too).
 | `Ulttt/Theorems.lean` | Properties of the rules and how the variants relate |
 | `Ulttt/Symmetry.lean` | The 8 rotations and reflections of the grid |
 | `Ulttt/SymmetryRules.lean` | Symmetries preserve the rules and the game value |
+| `Ulttt/Fast.lean` | Faster rule functions, each proved equal to the specification |
+| `Ulttt/Certificate.lean` | The certificate checker `check` and its soundness proof |
+| `Main.lean` | `ulttt-ref`: the rules as an executable, for differential testing |
+| `Check.lean` | `ulttt-check`: checks certificate files with `check` |
 
 ## Main results
 
@@ -31,3 +35,13 @@ Build with `lake build` (CI runs it with `--wfail`, so warnings fail too).
   preserves which moves are legal, commutes with playing, and keeps the result.
 - `value_map`: symmetric positions have the same value. This is what makes
   symmetry reduction in the solver sound.
+- `check_sound`: if `check` accepts a certificate that player `p` can force at
+  least `r`, then `r ≤ valueFor v p s`. Certificates are produced by the Rust
+  solver (`ulttt certify`), which therefore does not need to be trusted.
+
+## Trust
+
+Certificates are checked by the compiled `ulttt-check` executable, which runs
+`check` itself. Its results rely on Lean's kernel for the proofs, and on the
+Lean compiler and runtime, plus the certificate parser in `Check.lean`, for
+the execution.
