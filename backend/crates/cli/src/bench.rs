@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::time::Instant;
 
 use clap::Args;
@@ -21,6 +23,10 @@ pub struct BenchArgs {
     /// Git revision of the code being benchmarked, recorded with the run.
     #[arg(long, default_value = "")]
     rev: String,
+    /// Positions solved in parallel, each by its own solver. Times are per
+    /// position, so they grow if jobs compete for memory bandwidth.
+    #[arg(short, long, default_value_t = 1)]
+    jobs: usize,
     /// Free-form notes recorded with the run.
     #[arg(long, default_value = "")]
     notes: String,
@@ -54,38 +60,56 @@ pub fn run(db: &mut Db, args: &BenchArgs) -> ExitCode {
 
     let mut mismatches = 0;
     let (mut total_nodes, mut total_micros, mut solved) = (0u64, 0u64, 0usize);
-    // One solver for the whole run, reset before each position: every position
-    // is solved from scratch, without paying to allocate memory each time.
-    let mut solver = ulttt_solver::by_name(&args.solver).expect("checked above");
-    solver.set_node_limit(args.node_limit);
-    for (i, pos) in suite.positions.iter().enumerate() {
-        solver.reset();
-        let start = Instant::now();
-        let value = solver.solve(pos, suite.variant);
-        let micros = start.elapsed().as_micros() as u64;
-        let nodes = solver.stats().nodes;
-        db.record_result(run_id, i, value, nodes, micros)
-            .expect("record result");
-        total_nodes += nodes;
-        total_micros += micros;
-        let shown = value.map_or("?", Value::name);
-        let mut note = String::new();
-        if let Some(v) = value {
-            solved += 1;
-            db.store_solved(suite.variant, pos, v, nodes, &args.solver)
-                .expect("store solved");
-            if let Some(&expected) = known.get(&i)
-                && expected != v
-            {
-                mismatches += 1;
-                note = format!("  MISMATCH: earlier runs found {}", expected.name());
-            }
+    // Each job takes the next unsolved position. A job keeps one solver for the
+    // whole run, reset before each position: every position is solved from
+    // scratch, without paying to allocate memory each time. Results come back
+    // to this thread, which owns the database.
+    let next = AtomicUsize::new(0);
+    let (tx, rx) = mpsc::channel();
+    let (positions, variant) = (&suite.positions, suite.variant);
+    std::thread::scope(|scope| {
+        for _ in 0..args.jobs.max(1) {
+            let (tx, next) = (tx.clone(), &next);
+            scope.spawn(move || {
+                let mut solver = ulttt_solver::by_name(&args.solver).expect("checked above");
+                solver.set_node_limit(args.node_limit);
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(pos) = positions.get(i) else { break };
+                    solver.reset();
+                    let start = Instant::now();
+                    let value = solver.solve(pos, variant);
+                    let micros = start.elapsed().as_micros() as u64;
+                    let _ = tx.send((i, value, solver.stats().nodes, micros));
+                }
+            });
         }
-        println!(
-            "{i:>3}  {shown:<5} {nodes:>14} nodes {:>10.3}s{note}",
-            micros as f64 / 1e6
-        );
-    }
+        drop(tx);
+        for (i, value, nodes, micros) in rx {
+            let pos = &positions[i];
+            db.record_result(run_id, i, value, nodes, micros)
+                .expect("record result");
+            total_nodes += nodes;
+            total_micros += micros;
+            let shown = value.map_or("?", Value::name);
+            let mut note = String::new();
+            if let Some(v) = value {
+                solved += 1;
+                db.store_solved(suite.variant, pos, v, nodes, &args.solver)
+                    .expect("store solved");
+                if let Some(&expected) = known.get(&i)
+                    && expected != v
+                {
+                    mismatches += 1;
+                    note = format!("  MISMATCH: earlier runs found {}", expected.name());
+                }
+            }
+            println!(
+                "{i:>3}  {shown:<5} {nodes:>14} nodes {:>10.3}s{note}",
+                micros as f64 / 1e6
+            );
+        }
+    });
     db.finish_run(run_id).expect("finish run");
     println!(
         "run {run_id}: {} solved {solved}/{}  nodes {total_nodes}  time {:.3}s  {:.1} Mnodes/s",
