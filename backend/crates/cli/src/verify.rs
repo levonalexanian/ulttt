@@ -106,10 +106,20 @@ pub fn verify_suite(db: &Db, args: &VerifyArgs) -> ExitCode {
                     "{i:>3}  {:<5} verified ({moves} certificate moves)",
                     value.name()
                 );
-            } else {
+            } else if output.status.code() == Some(1) {
+                // `ulttt-check` exits with 1 exactly when it rejects a certificate.
                 failures += 1;
                 println!("{i:>3}  {:<5} REJECTED by the checker", value.name());
                 print!("{}", String::from_utf8_lossy(&output.stdout));
+            } else {
+                // Killed or crashed, e.g. out of memory on a huge certificate:
+                // nothing was decided either way.
+                failures += 1;
+                println!(
+                    "{i:>3}  {:<5} not checked: the checker failed ({}, {moves} moves)",
+                    value.name(),
+                    output.status
+                );
             }
         }
     });
