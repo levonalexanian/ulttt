@@ -19,6 +19,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("verified.sql"),
     include_str!("matches.sql"),
     include_str!("match_time.sql"),
+    include_str!("match_moves.sql"),
 ];
 
 /// What to record about a new match.
@@ -44,6 +45,8 @@ pub struct MatchGame {
     pub score: i8,
     pub plies: u32,
     pub micros: u64,
+    /// The moves played from the opening.
+    pub moves: Vec<ulttt_game::Move>,
 }
 
 /// Totals for one match.
@@ -242,8 +245,8 @@ impl Db {
     /// Records one game of a match.
     pub fn record_game(&self, match_id: i64, g: &MatchGame) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO match_games (match_id, idx, opening, a_is_x, score, plies, micros)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO match_games (match_id, idx, opening, a_is_x, score, plies, micros, moves)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 match_id,
                 g.idx as i64,
@@ -251,10 +254,42 @@ impl Db {
                 g.a_is_x,
                 g.score,
                 g.plies,
-                g.micros as i64
+                g.micros as i64,
+                g.moves
+                    .iter()
+                    .map(|m| m.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
             ],
         )?;
         Ok(())
+    }
+
+    /// Every recorded game of `variant` with its moves: the opening, the moves
+    /// and the result for X (1, 0 or -1).
+    pub fn recorded_games(
+        &self,
+        variant: Variant,
+    ) -> Result<Vec<(Position, Vec<ulttt_game::Move>, i8)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT g.opening, g.moves, CASE WHEN g.a_is_x THEN g.score ELSE -g.score END
+             FROM match_games g JOIN matches m ON m.id = g.match_id
+             WHERE m.variant = ?1 AND g.moves != ''",
+        )?;
+        stmt.query_map(params![variant.name()], |r| {
+            let opening: String = r.get(0)?;
+            let moves: String = r.get(1)?;
+            let opening = opening.parse().map_err(|e| parse_error(0, e))?;
+            let moves = moves
+                .split_whitespace()
+                .map(|m| {
+                    m.parse()
+                        .map_err(|_| parse_error(1, format!("bad move {m:?}")))
+                })
+                .collect::<Result<_>>()?;
+            Ok((opening, moves, r.get(2)?))
+        })?
+        .collect()
     }
 
     /// Marks a match as finished.
@@ -589,6 +624,7 @@ mod tests {
                 score,
                 plies: 40,
                 micros: 10,
+                moves: vec![40, 36],
             };
             db.record_game(id, &g).unwrap();
         }
@@ -596,5 +632,10 @@ mod tests {
         let m = &db.match_summaries(10).unwrap()[0];
         assert_eq!((m.a_wins, m.draws, m.b_wins), (2, 1, 1));
         assert_eq!(m.engine_b, "engine:tempo=0");
+        let games = db.recorded_games(Variant::Classic).unwrap();
+        assert_eq!(games.len(), 4);
+        assert_eq!(games[0].1, vec![40, 36]);
+        // Game 1 had A as O and A won: O won.
+        assert_eq!(games[1].2, -1);
     }
 }

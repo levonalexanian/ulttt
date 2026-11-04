@@ -9,7 +9,7 @@ use clap::Args;
 use ulttt_db::{Db, MatchGame, MatchSummary, NewMatch};
 use ulttt_engine::Agent;
 use ulttt_game::random::Rng;
-use ulttt_game::{Outcome, Player, Position, Variant};
+use ulttt_game::{Move, Outcome, Player, Position, Variant};
 
 #[derive(Args)]
 pub struct MatchArgs {
@@ -54,13 +54,13 @@ fn play_game(
     o: &str,
     nodes: u64,
     ms: Option<u64>,
-) -> (Outcome, u32) {
+) -> (Outcome, Vec<Move>) {
     let mut engines: [Box<dyn Agent>; 2] = [
         ulttt_engine::agent(v, x).expect("checked"),
         ulttt_engine::agent(v, o).expect("checked"),
     ];
     let mut pos = *opening;
-    let mut plies = 0;
+    let mut moves = Vec::new();
     while !pos.is_terminal(v) {
         let side = pos.to_move().index();
         if let Some(ms) = ms {
@@ -72,9 +72,9 @@ fn play_game(
         }
         let choice = engines[side].best_move(&pos, nodes).expect("game not over");
         pos.play(choice.mv);
-        plies += 1;
+        moves.push(choice.mv);
     }
-    (pos.outcome(v), plies)
+    (pos.outcome(v), moves)
 }
 
 /// `engine` or `engine:<settings>`, as stored in the database.
@@ -148,7 +148,7 @@ pub fn run(db: &Db, args: &MatchArgs) -> ExitCode {
                     let a_is_x = idx % 2 == 0;
                     let (x, o) = if a_is_x { (a, b) } else { (b, a) };
                     let t = Instant::now();
-                    let (outcome, plies) = play_game(v, &opening, x, o, args.nodes, args.ms);
+                    let (outcome, moves) = play_game(v, &opening, x, o, args.nodes, args.ms);
                     let a_player = if a_is_x { Player::X } else { Player::O };
                     let score = match outcome {
                         Outcome::Win(p) if p == a_player => 1,
@@ -160,8 +160,9 @@ pub fn run(db: &Db, args: &MatchArgs) -> ExitCode {
                         opening,
                         a_is_x,
                         score,
-                        plies,
+                        plies: moves.len() as u32,
                         micros: t.elapsed().as_micros() as u64,
+                        moves,
                     };
                     let _ = tx.send(game);
                 }
