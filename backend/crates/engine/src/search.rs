@@ -3,7 +3,7 @@
 use ulttt_game::{Move, Moves, Outcome, Player, Position, Variant, board_of, cell_of};
 use ulttt_solver::{Options as ExactOptions, Search, Solver, Value};
 
-use crate::eval::{WIN, evaluate};
+use crate::eval::{WIN, evaluate, wins_now};
 use crate::options::Options;
 
 /// Scores this close to [`WIN`] are forced results found by the search.
@@ -250,6 +250,9 @@ impl Engine {
             return 0;
         }
         if depth == 0 {
+            if self.opts.leaf_wins && wins_now(pos, v) {
+                return WIN - ply - 1;
+            }
             return evaluate(pos, v, &self.opts.weights);
         }
         let key = pos.hash64();
