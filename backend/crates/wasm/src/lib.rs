@@ -126,7 +126,14 @@ pub fn best_move(variant_name: &str, pos: &str, node_limit: u32) -> Result<i32, 
     Ok(ENGINE.with(|cell| {
         let mut slot = cell.borrow_mut();
         if slot.as_ref().is_none_or(|e| e.variant() != v) {
-            *slot = Some(Engine::new(v, ENGINE_TT_BITS, ENGINE_EXACT_TT_BITS));
+            *slot = Some(Engine::new(
+                v,
+                ulttt_engine::Options {
+                    tt_bits: ENGINE_TT_BITS,
+                    exact_tt_bits: ENGINE_EXACT_TT_BITS,
+                    ..Default::default()
+                },
+            ));
         }
         let engine = slot.as_mut().expect("just set");
         engine
