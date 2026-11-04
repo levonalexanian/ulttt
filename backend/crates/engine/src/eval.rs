@@ -114,12 +114,37 @@ impl Evaluator {
             co[b as usize] = o;
             local += BOARD_WEIGHT[b as usize] * (x - o);
         }
-        let mut global = 0.0;
-        for line in LINES {
-            let [a, b, c] = line.map(usize::from);
-            global += cx[a] * cx[b] * cx[c] - co[a] * co[b] * co[c];
-        }
+        let global = if w.union > 0.0 {
+            // The chance that at least one line comes through, treating
+            // lines as independent.
+            let (mut miss_x, mut miss_o) = (1.0, 1.0);
+            for line in LINES {
+                let [a, b, c] = line.map(usize::from);
+                miss_x *= 1.0 - cx[a] * cx[b] * cx[c];
+                miss_o *= 1.0 - co[a] * co[b] * co[c];
+            }
+            miss_o - miss_x
+        } else {
+            let mut sum = 0.0;
+            for line in LINES {
+                let [a, b, c] = line.map(usize::from);
+                sum += cx[a] * cx[b] * cx[c] - co[a] * co[b] * co[c];
+            }
+            sum
+        };
         let mut score = w.global * global + w.local * local;
+        if w.sent != 0.0
+            && let Some(b) = pos.sent().filter(|&b| pos.allowed_boards(v) == 1 << b)
+            && pos.owner(b).is_none()
+            && pos.local_threats(pos.to_move(), b) != 0
+        {
+            // The player to move is sent to a board they can take at once.
+            score += if pos.to_move() == Player::X {
+                w.sent
+            } else {
+                -w.sent
+            };
+        }
         if v == Variant::Majority {
             // Boards count even without a line.
             score += w.majority * (cx.iter().sum::<f32>() - co.iter().sum::<f32>());

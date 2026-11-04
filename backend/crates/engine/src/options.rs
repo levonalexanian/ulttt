@@ -16,6 +16,12 @@ pub struct Weights {
     /// (an empty open line weighs 1).
     pub line1: f32,
     pub line2: f32,
+    /// Nonzero: combine global lines as the chance that at least one
+    /// completes, instead of their sum.
+    pub union: f32,
+    /// Bonus for the player to move being sent to a board they can take with
+    /// their move.
+    pub sent: f32,
 }
 
 impl Default for Weights {
@@ -27,6 +33,8 @@ impl Default for Weights {
             tempo: 300.0,
             line1: 3.0,
             line2: 10.0,
+            union: 0.0,
+            sent: 0.0,
         }
     }
 }
@@ -76,7 +84,7 @@ impl Default for Options {
 impl Options {
     /// Parses comma-separated `key=value` settings on top of the defaults:
     /// `tt`, `xtt`, `xmax`, `xshare`, `leafwin`, `pvs`, `killers`, `tt2` (0 or 1), `qs` (plies), and the weights `global`, `local`,
-    /// `majority`, `tempo`, `line1`, `line2`.
+    /// `majority`, `tempo`, `line1`, `line2`, `union`, `sent`.
     pub fn parse(spec: &str) -> Result<Options, String> {
         let mut o = Options::default();
         for part in spec.split(',').filter(|p| !p.is_empty()) {
@@ -109,6 +117,8 @@ impl Options {
                 "tempo" => o.weights.tempo = float()?,
                 "line1" => o.weights.line1 = float()?,
                 "line2" => o.weights.line2 = float()?,
+                "union" => o.weights.union = float()?,
+                "sent" => o.weights.sent = float()?,
                 _ => return Err(format!("unknown engine option {key:?}")),
             }
         }
