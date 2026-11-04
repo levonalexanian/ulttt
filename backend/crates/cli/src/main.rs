@@ -53,7 +53,7 @@ enum Command {
         #[arg(short, long, default_value = "classic")]
         variant: Variant,
         /// Solver to use.
-        #[arg(long, default_value = "alphabeta")]
+        #[arg(long, default_value = "dfpn")]
         solver: String,
         /// Give up after this many positions.
         #[arg(long)]
@@ -91,7 +91,7 @@ enum Command {
         #[arg(short, long, default_value = "classic")]
         variant: Variant,
         /// Solver used to pick the strategy's moves.
-        #[arg(long, default_value = "search")]
+        #[arg(long, default_value = "dfpn")]
         solver: String,
         /// Directory to write the certificates to.
         #[arg(short, long, default_value = "data/certificates")]

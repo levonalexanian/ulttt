@@ -13,7 +13,7 @@ pub struct BenchArgs {
     /// Suite to run.
     suite: String,
     /// Solver to benchmark.
-    #[arg(long, default_value = "alphabeta")]
+    #[arg(long, default_value = "dfpn")]
     solver: String,
     /// Give up on a position after this many nodes.
     #[arg(long)]
