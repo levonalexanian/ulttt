@@ -1,14 +1,18 @@
-//! Plays random games with the Rust engine and checks that the Lean reference
-//! executable (`proofs/Main.lean`) agrees on every position: the legal moves, the
-//! board owners and the result.
+//! Differential testing against the Lean reference executable (`proofs/Main.lean`).
+//!
+//! 1. Rules: plays random games with the Rust engine and checks Lean agrees on
+//!    every position: the legal moves, the board owners and the result.
+//! 2. Values: picks random endgame positions and checks the Rust solver's value
+//!    equals `Ulttt.value`, the minimax value defined in Lean.
 //!
 //! Usage: `ulttt-difftest <path to ulttt-ref> [games] [seed]`
 
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, ExitCode, Stdio};
+use std::io::{BufRead, BufReader, Lines, Write};
+use std::process::{Child, ChildStdout, Command, ExitCode, Stdio};
 use std::thread;
 
 use ulttt_game::{Move, Moves, Outcome, Player, Position, Variant};
+use ulttt_solver::{AlphaBeta, Solver};
 
 /// SplitMix64: a small, fast, seedable generator; good enough for random games.
 struct Rng(u64);
@@ -42,21 +46,170 @@ fn describe(v: Variant, pos: &Position) -> String {
     format!("{}|{owners}|{result}", legal.join(","))
 }
 
-/// A random game played to the end, with the description after each move.
-fn random_game(v: Variant, rng: &mut Rng) -> (Vec<Move>, Vec<String>) {
+/// A random game played to the end.
+fn random_game(v: Variant, rng: &mut Rng) -> Vec<Move> {
     let mut pos = Position::new();
     let mut moves = Vec::new();
-    let mut expected = vec![describe(v, &pos)];
     loop {
         let legal: Vec<Move> = Moves(pos.legal_moves(v)).collect();
         if legal.is_empty() {
-            return (moves, expected);
+            return moves;
         }
         let m = legal[rng.below(legal.len())];
         pos.play(m);
         moves.push(m);
-        expected.push(describe(v, &pos));
     }
+}
+
+fn play_all(moves: &[Move]) -> Position {
+    let mut pos = Position::new();
+    for &m in moves {
+        pos.play(m);
+    }
+    pos
+}
+
+/// The number of positions in the full game tree below `pos`, or `None` if it
+/// exceeds `limit`.
+fn tree_size(pos: &Position, v: Variant, limit: u64) -> Option<u64> {
+    let mut total = 1;
+    for m in Moves(pos.legal_moves(v)) {
+        total += tree_size(&pos.after(m), v, limit - total)?;
+        if total > limit {
+            return None;
+        }
+    }
+    Some(total)
+}
+
+/// The reference executable, fed by a writer thread so pipes cannot deadlock.
+struct Reference {
+    child: Child,
+    lines: Lines<BufReader<ChildStdout>>,
+    writer: Option<thread::JoinHandle<()>>,
+}
+
+impl Reference {
+    fn start(path: &str, input: Vec<String>) -> Reference {
+        let mut child = Command::new(path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("failed to start the reference executable");
+        let mut stdin = child.stdin.take().expect("stdin");
+        let writer = thread::spawn(move || {
+            for line in input {
+                stdin
+                    .write_all(line.as_bytes())
+                    .expect("write to reference");
+            }
+        });
+        let lines = BufReader::new(child.stdout.take().expect("stdout")).lines();
+        Reference {
+            child,
+            lines,
+            writer: Some(writer),
+        }
+    }
+
+    fn next_line(&mut self) -> String {
+        self.lines
+            .next()
+            .expect("reference ended early")
+            .expect("read from reference")
+    }
+
+    fn finish(mut self) {
+        if let Some(w) = self.writer.take() {
+            w.join().expect("writer thread");
+        }
+        self.child.wait().expect("reference exit");
+    }
+}
+
+impl Drop for Reference {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn move_list(moves: &[Move]) -> String {
+    moves
+        .iter()
+        .map(|m| m.to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn check_rules(reference: &str, games: usize, rng: &mut Rng) -> bool {
+    let cases: Vec<(Variant, Vec<Move>)> = (0..games)
+        .map(|i| {
+            let v = Variant::ALL[i % Variant::ALL.len()];
+            (v, random_game(v, rng))
+        })
+        .collect();
+    let input = cases
+        .iter()
+        .map(|(v, moves)| format!("{v} {}\n", move_list(moves)))
+        .collect();
+    let mut lean = Reference::start(reference, input);
+    let mut positions = 0usize;
+    for (i, (v, moves)) in cases.iter().enumerate() {
+        let mut pos = Position::new();
+        for k in 0..=moves.len() {
+            if k > 0 {
+                pos.play(moves[k - 1]);
+            }
+            let want = describe(*v, &pos);
+            let got = lean.next_line();
+            if got != want {
+                eprintln!(
+                    "MISMATCH in game {i} ({v}) after {k} moves: {:?}",
+                    &moves[..k]
+                );
+                eprintln!("  rust: {want}");
+                eprintln!("  lean: {got}");
+                return false;
+            }
+            positions += 1;
+        }
+    }
+    lean.finish();
+    println!("rules ok: {games} games, {positions} positions agree");
+    true
+}
+
+fn check_values(reference: &str, count: usize, rng: &mut Rng) -> bool {
+    // Endgame positions whose full game tree is small enough for Lean's minimax.
+    let mut cases: Vec<(Variant, Vec<Move>)> = Vec::new();
+    while cases.len() < count {
+        let v = Variant::ALL[cases.len() % Variant::ALL.len()];
+        let game = random_game(v, rng);
+        let back = 1 + rng.below(12.min(game.len()));
+        let moves = game[..game.len() - back].to_vec();
+        if tree_size(&play_all(&moves), v, 3_000).is_some() {
+            cases.push((v, moves));
+        }
+    }
+    let input = cases
+        .iter()
+        .map(|(v, moves)| format!("value {v} {}\n", move_list(moves)))
+        .collect();
+    let mut lean = Reference::start(reference, input);
+    for (v, moves) in &cases {
+        let want = AlphaBeta::new().solve(&play_all(moves), *v) as i8;
+        let got = lean.next_line();
+        if got != want.to_string() {
+            eprintln!("VALUE MISMATCH ({v}) after {:?}", moves);
+            eprintln!("  rust: {want}");
+            eprintln!("  lean: {got}");
+            return false;
+        }
+    }
+    lean.finish();
+    println!("values ok: {count} endgames agree");
+    true
 }
 
 fn main() -> ExitCode {
@@ -67,61 +220,12 @@ fn main() -> ExitCode {
     };
     let games: usize = args.get(2).map_or(3000, |s| s.parse().expect("games"));
     let seed: u64 = args.get(3).map_or(1, |s| s.parse().expect("seed"));
+    println!("seed {seed}");
 
     let mut rng = Rng(seed);
-    let cases: Vec<(Variant, Vec<Move>, Vec<String>)> = (0..games)
-        .map(|i| {
-            let v = Variant::ALL[i % Variant::ALL.len()];
-            let (moves, expected) = random_game(v, &mut rng);
-            (v, moves, expected)
-        })
-        .collect();
-
-    let mut child = Command::new(reference)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("failed to start the reference executable");
-    let mut stdin = child.stdin.take().expect("stdin");
-    let input: Vec<String> = cases
-        .iter()
-        .map(|(v, moves, _)| {
-            let ms: Vec<String> = moves.iter().map(|m| m.to_string()).collect();
-            format!("{v} {}\n", ms.join(" "))
-        })
-        .collect();
-    let writer = thread::spawn(move || {
-        for line in input {
-            stdin
-                .write_all(line.as_bytes())
-                .expect("write to reference");
-        }
-    });
-
-    let mut lines = BufReader::new(child.stdout.take().expect("stdout")).lines();
-    let mut positions = 0usize;
-    for (i, (v, moves, expected)) in cases.iter().enumerate() {
-        for (k, want) in expected.iter().enumerate() {
-            let got = lines
-                .next()
-                .expect("reference ended early")
-                .expect("read from reference");
-            if &got != want {
-                eprintln!(
-                    "MISMATCH in game {i} ({v}) after {k} moves: {:?}",
-                    &moves[..k]
-                );
-                eprintln!("  rust: {want}");
-                eprintln!("  lean: {got}");
-                let _ = child.kill();
-                let _ = child.wait();
-                return ExitCode::FAILURE;
-            }
-            positions += 1;
-        }
+    if check_rules(reference, games, &mut rng) && check_values(reference, games / 30, &mut rng) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
-    writer.join().expect("writer thread");
-    child.wait().expect("reference exit");
-    println!("ok: {games} games, {positions} positions agree (seed {seed})");
-    ExitCode::SUCCESS
 }

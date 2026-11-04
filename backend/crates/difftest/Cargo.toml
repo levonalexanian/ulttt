@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 ulttt-game = { path = "../game" }
+ulttt-solver = { path = "../solver" }
 
 [lints]
 workspace = true
