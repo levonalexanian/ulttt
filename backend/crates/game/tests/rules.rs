@@ -161,3 +161,29 @@ fn hashes_are_well_spread() {
         "fullest slot {fullest}, average {average}"
     );
 }
+
+/// Changing who holds any single cell changes the hash. (A hash that multiplied
+/// each word by a constant and XORed the products failed this: a mark in a
+/// word's top bit contributes the same bit whichever player holds it.)
+#[test]
+fn hash_distinguishes_single_cell_changes() {
+    let mut rng = ulttt_game::random::Rng::new(4);
+    for _ in 0..200 {
+        let pos = rng.position(Variant::Open, 30).unwrap();
+        let s = pos.to_string();
+        for m in 0..81 {
+            let mut cells: Vec<char> = s[..81].chars().collect();
+            for c in ['x', 'o', '.'] {
+                if cells[m] == c {
+                    continue;
+                }
+                let old = cells[m];
+                cells[m] = c;
+                let changed = format!("{}{}", cells.iter().collect::<String>(), &s[81..]);
+                let other: Position = changed.parse().unwrap();
+                assert_ne!(other.hash64(), pos.hash64(), "cell {m} {old} -> {c}");
+                cells[m] = old;
+            }
+        }
+    }
+}

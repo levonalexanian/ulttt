@@ -123,16 +123,18 @@ impl Position {
     /// move is implied by the cells, so it is not mixed in separately.
     #[inline]
     pub fn hash64(&self) -> u64 {
-        // Each word is multiplied by its own odd constant, independently, so the
-        // multiplies run in parallel; a final mix spreads the high bits down.
+        #[inline]
+        fn mix(x: u64) -> u64 {
+            let x = (x ^ (x >> 32)).wrapping_mul(0xD6E8_FEB8_6659_FD93);
+            let x = (x ^ (x >> 32)).wrapping_mul(0xD6E8_FEB8_6659_FD93);
+            x ^ (x >> 32)
+        }
         let meta = self.owner[0] as u64 | (self.owner[1] as u64) << 16 | (self.sent as u64) << 32;
-        let h = (self.cells[0] as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
-            ^ ((self.cells[0] >> 64) as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
-            ^ (self.cells[1] as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
-            ^ ((self.cells[1] >> 64) as u64).wrapping_mul(0xD6E8_FEB8_6659_FD93)
-            ^ meta.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
-        let h = (h ^ (h >> 29)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        h ^ (h >> 32)
+        let mut h = mix(meta ^ 0x9E37_79B9_7F4A_7C15);
+        h = mix(h ^ self.cells[0] as u64);
+        h = mix(h ^ (self.cells[0] >> 64) as u64);
+        h = mix(h ^ self.cells[1] as u64);
+        mix(h ^ (self.cells[1] >> 64) as u64)
     }
 
     #[inline]
