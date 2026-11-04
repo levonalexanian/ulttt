@@ -108,3 +108,27 @@ fn may_win_is_sound_and_monotone() {
         }
     }
 }
+
+/// `local_threats` matches a direct check: playing the cell completes a line.
+#[test]
+fn local_threats_match_brute_force() {
+    use ulttt_game::lines::{LINES, completing_cells};
+    for own in 0u16..512 {
+        for opp in 0u16..512 {
+            if own & opp != 0 {
+                continue;
+            }
+            let brute = (0..9u16)
+                .filter(|&c| (own | opp) >> c & 1 == 0)
+                .filter(|&c| {
+                    // Some line through `c` has its other two cells in `own`.
+                    let after = own | 1 << c;
+                    LINES
+                        .iter()
+                        .any(|l| l.contains(&(c as u8)) && l.iter().all(|&i| after >> i & 1 != 0))
+                })
+                .fold(0, |acc, c| acc | 1 << c);
+            assert_eq!(completing_cells(own, opp), brute, "own {own:b} opp {opp:b}");
+        }
+    }
+}

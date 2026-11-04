@@ -62,20 +62,33 @@ const fn build_line_avoiding() -> [bool; 512] {
 
 static LINE_AVOIDING: [bool; 512] = build_line_avoiding();
 
+const fn build_threats() -> [u16; 512] {
+    let mut table = [0u16; 512];
+    let mut mask = 0;
+    while mask < 512 {
+        let mut i = 0;
+        while i < LINES.len() {
+            let l = line_mask(LINES[i]);
+            let have = mask as u16 & l;
+            if have.count_ones() == 2 {
+                table[mask] |= l & !have;
+            }
+            i += 1;
+        }
+        mask += 1;
+    }
+    table
+}
+
+/// For each set of indices, the indices that would complete a line with two
+/// of them.
+static THREATS: [u16; 512] = build_threats();
+
 /// Empty indices where a player holding `own` (with the opponent holding
 /// `opp`) would complete a line.
 #[inline]
 pub fn completing_cells(own: u16, opp: u16) -> u16 {
-    let empty = !(own | opp) & FULL;
-    let mut out = 0;
-    for line in LINES {
-        let l = line_mask(line);
-        let free = l & empty;
-        if own & l | free == l && free.count_ones() == 1 {
-            out |= free;
-        }
-    }
-    out
+    THREATS[(own & FULL) as usize] & !(own | opp) & FULL
 }
 
 /// Whether some line contains none of the indices in `mask`, i.e. a player
