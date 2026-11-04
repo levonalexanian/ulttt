@@ -5,9 +5,10 @@ Lean definitions, for differential testing against the Rust engine.
 
 Each input line is `<variant> <move> <move> ...` with moves as indices 0-80.
 For the start position and after each move, one output line is printed:
-`<legal moves>|<owners>|<result>` where legal moves are comma-separated
+`<legal moves>|<owners>|<result>|<may win>` where legal moves are comma-separated
 indices, owners are 9 of `x`/`o`/`.`, and result is `x`, `o`, `d` (draw) or
-`-` (not over). Moves are played without checking legality.
+`-` (not over), then `mayWin` for X and O as `1`/`0`. Moves are played without
+checking legality.
 
 A line `value <variant> <move> ...` instead prints the game value (`1`, `0`
 or `-1`, from X's point of view) of the position after the moves, computed by
@@ -36,7 +37,8 @@ def describe (v : Variant) (s : State) : String :=
       | .win .O => "o"
       | .draw => "d"
     else "-"
-  s!"{",".intercalate legal}|{owners}|{result}"
+  let may (p : Player) := if s.mayWin v p then "1" else "0"
+  s!"{",".intercalate legal}|{owners}|{result}|{may .X}{may .O}"
 
 /-- Splits a line into words separated by spaces, ignoring line endings. -/
 def words (line : String) : List String :=

@@ -1,7 +1,8 @@
 //! Differential testing against the Lean reference executable (`proofs/Main.lean`).
 //!
 //! 1. Rules: plays random games with the Rust engine and checks Lean agrees on
-//!    every position: the legal moves, the board owners and the result.
+//!    every position: the legal moves, the board owners, the result, and
+//!    whether each player may still win (`may_win`, proved sound in Lean).
 //! 2. Values: picks random endgame positions and checks the Rust solver's value
 //!    equals `Ulttt.value`, the minimax value defined in Lean.
 //!
@@ -27,7 +28,13 @@ fn describe(v: Variant, pos: &Position) -> String {
         Some(Outcome::Win(Player::O)) => "o",
         Some(Outcome::Draw) => "d",
     };
-    format!("{}|{owners}|{result}", legal.join(","))
+    let may = |p| if pos.may_win(v, p) { "1" } else { "0" };
+    format!(
+        "{}|{owners}|{result}|{}{}",
+        legal.join(","),
+        may(Player::X),
+        may(Player::O)
+    )
 }
 
 fn play_all(moves: &[Move]) -> Position {
