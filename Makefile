@@ -8,3 +8,9 @@ image:
 
 shell:
 	docker run --rm -it -v "$(CURDIR):/workspace" -w /workspace $(IMAGE) bash
+
+.PHONY: frontend
+# Serves the frontend at http://localhost:5173.
+frontend:
+	docker run --rm -it -p 5173:5173 -v "$(CURDIR):/workspace" -w /workspace/frontend $(IMAGE) \
+		sh -c "npm install && npm run dev"
