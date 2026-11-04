@@ -103,6 +103,9 @@ pub struct DfPn {
     /// Positions with at least this many empty cells are looked up by their
     /// symmetry class, so symmetric positions share table entries.
     sym_min_empties: u32,
+    /// Positions with fewer empty cells are not stored in or looked up from the
+    /// table: near the end of the game, a probe costs more than it saves.
+    tt_min_empties: u32,
     stats: Stats,
     node_limit: u64,
     limit_now: u64,
@@ -118,12 +121,19 @@ impl DfPn {
         DfPn {
             tt: Table::new(tt_bits),
             sym_min_empties,
+            tt_min_empties: 0,
             stats: Stats::default(),
             node_limit: u64::MAX,
             limit_now: u64::MAX,
             aborted: false,
             spare: Vec::new(),
         }
+    }
+
+    /// Skips the table for positions with fewer than `n` empty cells.
+    pub fn with_tt_min_empties(mut self, n: u32) -> DfPn {
+        self.tt_min_empties = n;
+        self
     }
 
     /// `(phi, delta)` of a position known without search, if any.
@@ -165,6 +175,9 @@ impl DfPn {
     fn lookup(&self, q: &Question, pos: &Position) -> (u32, u32) {
         if let Some(pd) = self.evaluate(q, pos) {
             return pd;
+        }
+        if pos.empties() < self.tt_min_empties {
+            return (1, 1);
         }
         self.tt.get(self.key(q, pos)).unwrap_or((1, 1))
     }
@@ -225,7 +238,9 @@ impl DfPn {
             if phi >= th_phi || delta >= th_delta || self.aborted {
                 if !self.aborted {
                     let work = (self.stats.nodes - start).min(u32::MAX as u64) as u32;
-                    self.tt.put(key, phi, delta, work);
+                    if pos.empties() >= self.tt_min_empties {
+                        self.tt.put(key, phi, delta, work);
+                    }
                 }
                 return (phi, delta);
             }
@@ -316,7 +331,7 @@ mod tests {
     fn agrees_with_alphabeta() {
         let mut rng = Rng::new(9);
         let mut dfpn = DfPn::new(18, 82);
-        let mut dfpn_sym = DfPn::new(18, 0);
+        let mut dfpn_sym = DfPn::new(18, 0).with_tt_min_empties(8);
         for i in 0..90 {
             let v = Variant::ALL[i % 3];
             let Some(pos) = rng.position(v, 52) else {
