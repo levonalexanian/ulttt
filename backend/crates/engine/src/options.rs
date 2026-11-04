@@ -79,7 +79,7 @@ impl Default for Options {
             exact_share: 4,
             leaf_wins: true,
             pvs: true,
-            quiescence: 0,
+            quiescence: 6,
             killers: true,
             tt_buckets: false,
             lmr: 0,
