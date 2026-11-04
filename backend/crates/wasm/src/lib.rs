@@ -188,6 +188,22 @@ pub fn think(variant_name: &str, pos: &str, ms: u32) -> Result<Vec<f64>, JsError
     }))
 }
 
+/// The playing engine's score of every legal move for the player to move, as
+/// pairs `[move, score, move, score, ...]`, searching about `node_limit`
+/// positions in all. Scores beyond ±999000 are forced results.
+#[wasm_bindgen(js_name = scoreMoves)]
+pub fn score_moves(variant_name: &str, pos: &str, node_limit: u32) -> Result<Vec<i32>, JsError> {
+    let (v, pos) = (variant(variant_name)?, position(pos)?);
+    Ok(with_engine(v, |engine| {
+        engine.set_clock(None);
+        engine
+            .score_moves(&pos, u64::from(node_limit))
+            .into_iter()
+            .flat_map(|(m, s)| [i32::from(m), s])
+            .collect()
+    }))
+}
+
 /// A line of optimal play from the position, or an empty list if it could not
 /// be solved within `node_limit` positions per search.
 #[wasm_bindgen(js_name = principalVariation)]

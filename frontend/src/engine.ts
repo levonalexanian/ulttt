@@ -65,6 +65,14 @@ class Engine {
   bestMove(variant: Variant, pos: string, nodeLimit: number) {
     return this.call<number>({ fn: "bestMove", variant, pos, nodeLimit });
   }
+  /** The playing engine's score of every legal move, for the player to move
+   * (beyond ±999000 a forced result). */
+  async scoreMoves(variant: Variant, pos: string, nodeLimit: number) {
+    const flat = await this.call<number[]>({ fn: "scoreMoves", variant, pos, nodeLimit });
+    const scores = new Map<number, number>();
+    for (let i = 0; i < flat.length; i += 2) scores.set(flat[i], flat[i + 1]);
+    return scores;
+  }
   /** The engine's move after thinking for about `ms` milliseconds. */
   async think(variant: Variant, pos: string, ms: number): Promise<Thought> {
     const [move, score, depth, value, nodes] = await this.call<number[]>({ fn: "think", variant, pos, ms });
