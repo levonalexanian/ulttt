@@ -167,14 +167,13 @@ impl DfPn {
     }
 
     /// Searches `pos` until its `phi >= th_phi` or `delta >= th_delta`.
+    /// `pos` must be one that `evaluate` does not settle: the parent checked
+    /// that when it looked the child up.
     fn mid(&mut self, q: &Question, pos: &Position, th_phi: u32, th_delta: u32) -> (u32, u32) {
         self.stats.nodes += 1;
         if self.stats.nodes > self.limit_now {
             self.aborted = true;
             return (1, 1);
-        }
-        if let Some(pd) = self.evaluate(q, pos) {
-            return pd;
         }
         let key = self.key(q, pos);
         let start = self.stats.nodes;
@@ -235,7 +234,10 @@ impl DfPn {
 
     /// Answers the question for the root; `None` if the node limit was hit.
     fn prove(&mut self, q: &Question, pos: &Position) -> Option<bool> {
-        let (phi, _) = self.mid(q, pos, INF - 1, INF - 1);
+        let (phi, _) = match self.evaluate(q, pos) {
+            Some(pd) => pd,
+            None => self.mid(q, pos, INF - 1, INF - 1),
+        };
         if self.aborted {
             return None;
         }
