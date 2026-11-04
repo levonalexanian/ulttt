@@ -276,8 +276,24 @@ impl Engine {
         let original_alpha = alpha;
         let mut best = -WIN - 1;
         let mut best_move = NO_MOVE;
-        for m in self.ordered(pos, pos.legal_moves(v), tt_move) {
-            let s = -self.negamax(&pos.after(m), depth - 1, -beta, -alpha, ply + 1);
+        for (i, m) in self
+            .ordered(pos, pos.legal_moves(v), tt_move)
+            .into_iter()
+            .enumerate()
+        {
+            let child = pos.after(m);
+            let s = if i == 0 || !self.opts.pvs {
+                -self.negamax(&child, depth - 1, -beta, -alpha, ply + 1)
+            } else {
+                // Principal variation search: prove the move no better than
+                // the best so far with a null window, re-search if it is.
+                let s = -self.negamax(&child, depth - 1, -alpha - 1, -alpha, ply + 1);
+                if s > alpha && s < beta && !self.aborted {
+                    -self.negamax(&child, depth - 1, -beta, -alpha, ply + 1)
+                } else {
+                    s
+                }
+            };
             if self.aborted {
                 return 0;
             }
