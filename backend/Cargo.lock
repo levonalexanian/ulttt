@@ -164,6 +164,7 @@ name = "ulttt-difftest"
 version = "0.1.0"
 dependencies = [
  "ulttt-game",
+ "ulttt-solver",
 ]
 
 [[package]]
