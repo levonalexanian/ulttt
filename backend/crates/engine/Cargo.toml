@@ -1,0 +1,14 @@
+[package]
+name = "ulttt-engine"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "A playing engine for Ultimate Tic-Tac-Toe positions too deep to solve."
+
+[dependencies]
+ulttt-game = { path = "../game" }
+ulttt-solver = { path = "../solver" }
+
+[lints]
+workspace = true
