@@ -41,14 +41,32 @@ const UPPER: u8 = 2;
 const NO_MOVE: u8 = 255;
 
 /// Moves in search order, on the stack.
+/// Scored moves, handed out best first (ties: lowest move). Picking lazily
+/// beats sorting, since most nodes stop after a move or two.
 struct MoveList {
-    moves: [Move; 81],
+    scored: [(i32, Move); 81],
     len: usize,
+    next: usize,
 }
 
-impl MoveList {
-    fn as_slice(&self) -> &[Move] {
-        &self.moves[..self.len]
+impl Iterator for MoveList {
+    type Item = Move;
+
+    fn next(&mut self) -> Option<Move> {
+        if self.next >= self.len {
+            return None;
+        }
+        let mut best = self.next;
+        for i in self.next + 1..self.len {
+            let (s, m) = self.scored[i];
+            let (bs, bm) = self.scored[best];
+            if s > bs || (s == bs && m < bm) {
+                best = i;
+            }
+        }
+        self.scored.swap(self.next, best);
+        self.next += 1;
+        Some(self.scored[self.next - 1].1)
     }
 }
 
@@ -197,10 +215,7 @@ impl Engine {
         for h in self.history.iter_mut().flatten() {
             *h /= 8;
         }
-        let mut moves: Vec<Move> = self
-            .ordered(pos, candidates, NO_MOVE, 0)
-            .as_slice()
-            .to_vec();
+        let mut moves: Vec<Move> = self.ordered(pos, candidates, NO_MOVE, 0).collect();
         let mut best: (Move, i32, u32) = (moves[0], 0, 0);
         if moves.len() == 1 {
             // Still worth a score for the caller; a shallow search is enough.
@@ -308,15 +323,11 @@ impl Engine {
             scored[n] = (s, m);
             n += 1;
         }
-        scored[..n].sort_unstable_by_key(|a| std::cmp::Reverse(a.0));
-        let mut list = MoveList {
-            moves: [0; 81],
+        MoveList {
+            scored,
             len: n,
-        };
-        for (i, &(_, m)) in scored[..n].iter().enumerate() {
-            list.moves[i] = m;
+            next: 0,
         }
-        list
     }
 
     /// Past the horizon, keep following moves that win a local board (up to
@@ -442,7 +453,7 @@ impl Engine {
         let mut best = -WIN - 1;
         let mut best_move = NO_MOVE;
         let list = self.ordered(pos, pos.legal_moves(v), tt_move, ply as usize);
-        for (i, &m) in list.as_slice().iter().enumerate() {
+        for (i, m) in list.enumerate() {
             let child = pos.after(m);
             let s = if i == 0 || !self.opts.pvs {
                 -self.negamax(&child, depth - 1, -beta, -alpha, ply + 1)
