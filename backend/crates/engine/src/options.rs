@@ -83,7 +83,7 @@ impl Weights {
                 ..base
             },
             // Tuned weights were not significantly better (+10 ±22).
-            Variant::Open => base,| Variant::Majority => base,
+            Variant::Open => base,
         }
     }
 }
