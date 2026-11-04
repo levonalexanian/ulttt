@@ -1,7 +1,7 @@
 //! Matches between playing-engine configurations, with results in SQLite.
 
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -44,6 +44,37 @@ pub struct MatchArgs {
     rev: String,
     #[arg(long, default_value = "")]
     notes: String,
+    /// Stop early by a sequential probability ratio test of "A is `elo1`
+    /// stronger" against "A is `elo0` stronger" (5% error each way), given as
+    /// `elo0,elo1`, e.g. `0,15`.
+    #[arg(long)]
+    sprt: Option<String>,
+}
+
+/// Parses SPRT bounds `elo0,elo1`.
+fn parse_sprt(s: &str) -> Result<(f64, f64), String> {
+    let bad = || format!("expected --sprt elo0,elo1, got {s:?}");
+    let (a, b) = s.split_once(',').ok_or_else(bad)?;
+    let e0: f64 = a.trim().parse().map_err(|_| bad())?;
+    let e1: f64 = b.trim().parse().map_err(|_| bad())?;
+    if e0 < e1 { Ok((e0, e1)) } else { Err(bad()) }
+}
+
+/// The log-likelihood ratio of "A is `elo1` stronger" against "A is `elo0`
+/// stronger" given the games' scores, in the normal approximation.
+pub fn llr(scores: &[f64], elo0: f64, elo1: f64) -> f64 {
+    let n = scores.len() as f64;
+    if n < 2.0 {
+        return 0.0;
+    }
+    let mean = scores.iter().sum::<f64>() / n;
+    let var = scores.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / n;
+    if var == 0.0 {
+        return 0.0;
+    }
+    let expected = |e: f64| 1.0 / (1.0 + 10f64.powf(-e / 400.0));
+    let (s0, s1) = (expected(elo0), expected(elo1));
+    n * (s1 - s0) * (2.0 * mean - s0 - s1) / (2.0 * var)
 }
 
 /// Plays one game from `opening` and returns its outcome and length.
@@ -102,6 +133,14 @@ pub fn elo(scores: &[f64]) -> (f64, f64) {
 }
 
 pub fn run(db: &Db, args: &MatchArgs) -> ExitCode {
+    let sprt = match args.sprt.as_deref().map(parse_sprt) {
+        None => None,
+        Some(Ok(bounds)) => Some(bounds),
+        Some(Err(e)) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
     let v = args.variant;
     let (a, b) = (args.engine_a.as_str(), args.engine_b.as_str());
     match (ulttt_engine::agent(v, a), ulttt_engine::agent(v, b)) {
@@ -132,16 +171,17 @@ pub fn run(db: &Db, args: &MatchArgs) -> ExitCode {
         .expect("start match");
     let games = 2 * openings.len();
     let next = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
     let (tx, rx) = mpsc::channel();
     let mut scores = Vec::with_capacity(games);
     let start = Instant::now();
     std::thread::scope(|scope| {
         for _ in 0..args.jobs.max(1) {
-            let (tx, next, openings) = (tx.clone(), &next, &openings);
+            let (tx, next, openings, stop) = (tx.clone(), &next, &openings, &stop);
             scope.spawn(move || {
                 loop {
                     let idx = next.fetch_add(1, Ordering::Relaxed);
-                    if idx >= games {
+                    if idx >= games || stop.load(Ordering::Relaxed) {
                         break;
                     }
                     let opening = openings[idx / 2];
@@ -175,6 +215,19 @@ pub fn run(db: &Db, args: &MatchArgs) -> ExitCode {
             if scores.len() % 20 == 0 {
                 let (d, m) = elo(&scores);
                 eprintln!("{}/{games} games: A {d:+.0} ± {m:.0} Elo", scores.len());
+            }
+            if let Some((e0, e1)) = sprt
+                && !stop.load(Ordering::Relaxed)
+            {
+                let l = llr(&scores, e0, e1);
+                if l.abs() >= 19f64.ln() {
+                    let verdict = if l > 0.0 { "H1 (A stronger)" } else { "H0" };
+                    eprintln!(
+                        "SPRT: {verdict} accepted after {} games, LLR {l:.2}",
+                        scores.len()
+                    );
+                    stop.store(true, Ordering::Relaxed);
+                }
             }
         }
     });
@@ -268,5 +321,18 @@ mod tests {
         let (d, m) = elo(&[1.0, 1.0, 1.0, 0.0]);
         assert!((d - 190.8).abs() < 0.1, "{d}");
         assert!(m > 0.0);
+    }
+
+    #[test]
+    fn sprt_llr() {
+        // Winning 60% clearly favors +15 over 0; losing 60% favors 0.
+        let mut good = vec![1.0; 600];
+        good.extend(vec![0.0; 400]);
+        assert!(llr(&good, 0.0, 15.0) > 19f64.ln());
+        let mut bad = vec![1.0; 400];
+        bad.extend(vec![0.0; 600]);
+        assert!(llr(&bad, 0.0, 15.0) < -(19f64.ln()));
+        assert_eq!(parse_sprt("0,15"), Ok((0.0, 15.0)));
+        assert!(parse_sprt("15,0").is_err());
     }
 }
