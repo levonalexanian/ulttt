@@ -33,10 +33,6 @@ const LINE_MASKS: [u16; 8] = {
     m
 };
 
-/// How much each board matters on its own: the center is on four global lines,
-/// corners on three, edges on two.
-const BOARD_WEIGHT: [f32; 9] = [3.0, 2.0, 3.0, 2.0, 4.0, 2.0, 3.0, 2.0, 3.0];
-
 /// The potential of `own` on a local board where the opponent holds `opp`: the
 /// open lines (no opponent mark), weighted by how many marks they already have.
 fn potential(own: u16, opp: u16, w: &Weights) -> f32 {
@@ -58,8 +54,8 @@ fn unowned_chances(x: u16, o: u16, w: &Weights) -> (f32, f32) {
     // Even an uncontested board is not won yet, and it gets harder to win as
     // it fills up.
     let free = (FULL & !(x | o)).count_ones() as f32 / 9.0;
-    let total = px + po + 4.0;
-    let scale = 0.5 + 0.4 * (1.0 - free);
+    let total = px + po + w.prior;
+    let scale = w.base + w.fill * (1.0 - free);
     (scale * px / total, scale * po / total)
 }
 
@@ -77,6 +73,8 @@ pub fn wins_now(pos: &Position, v: Variant) -> bool {
 /// chances precomputed (indexed by X's cells, then O's shifted by 9).
 pub struct Evaluator {
     w: Weights,
+    /// How much each board matters on its own (center, corners, edges).
+    board_weight: [f32; 9],
     chances: Vec<(f32, f32)>,
 }
 
@@ -85,7 +83,13 @@ impl Evaluator {
         let chances = (0..1u32 << 18)
             .map(|i| unowned_chances(i as u16 & FULL, (i >> 9) as u16 & FULL, &w))
             .collect();
-        Evaluator { w, chances }
+        let (c, k, e) = (w.corner, w.center, w.edge);
+        let board_weight = [c, e, c, e, k, e, c, e, c];
+        Evaluator {
+            w,
+            board_weight,
+            chances,
+        }
     }
 
     /// Each player's chance (X, O) of winning board `b`, in `0..=1`.
@@ -112,7 +116,7 @@ impl Evaluator {
             let (x, o) = self.board_chances(pos, b);
             cx[b as usize] = x;
             co[b as usize] = o;
-            local += BOARD_WEIGHT[b as usize] * (x - o);
+            local += self.board_weight[b as usize] * (x - o);
         }
         let global = if w.union > 0.0 {
             // The chance that at least one line comes through, treating
