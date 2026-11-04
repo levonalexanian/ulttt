@@ -98,13 +98,19 @@ fn fit_k(evals: &[f32], data: &[Sample]) -> f32 {
 
 type Field = (&'static str, fn(&mut Weights) -> &mut f32);
 
-const FIELDS: [Field; 6] = [
+const FIELDS: [Field; 12] = [
     ("global", |w| &mut w.global),
     ("local", |w| &mut w.local),
     ("majority", |w| &mut w.majority),
     ("tempo", |w| &mut w.tempo),
     ("line1", |w| &mut w.line1),
     ("line2", |w| &mut w.line2),
+    ("center", |w| &mut w.center),
+    ("corner", |w| &mut w.corner),
+    ("edge", |w| &mut w.edge),
+    ("base", |w| &mut w.base),
+    ("fill", |w| &mut w.fill),
+    ("prior", |w| &mut w.prior),
 ];
 
 fn spec(w: &Weights) -> String {

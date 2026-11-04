@@ -22,6 +22,16 @@ pub struct Weights {
     /// Bonus for the player to move being sent to a board they can take with
     /// their move.
     pub sent: f32,
+    /// Weights of local boards by position, for the `local` term: the center
+    /// is on four global lines, corners on three, edges on two.
+    pub center: f32,
+    pub corner: f32,
+    pub edge: f32,
+    /// An unowned board's chances: `(base + fill * filled) * potential /
+    /// (potential of both + prior)`, with `filled` the share of occupied cells.
+    pub base: f32,
+    pub fill: f32,
+    pub prior: f32,
 }
 
 impl Default for Weights {
@@ -35,6 +45,12 @@ impl Default for Weights {
             line2: 10.0,
             union: 0.0,
             sent: 0.0,
+            center: 4.0,
+            corner: 3.0,
+            edge: 2.0,
+            base: 0.5,
+            fill: 0.4,
+            prior: 4.0,
         }
     }
 }
@@ -128,6 +144,12 @@ impl Options {
                 "line2" => o.weights.line2 = float()?,
                 "union" => o.weights.union = float()?,
                 "sent" => o.weights.sent = float()?,
+                "center" => o.weights.center = float()?,
+                "corner" => o.weights.corner = float()?,
+                "edge" => o.weights.edge = float()?,
+                "base" => o.weights.base = float()?,
+                "fill" => o.weights.fill = float()?,
+                "prior" => o.weights.prior = float()?,
                 _ => return Err(format!("unknown engine option {key:?}")),
             }
         }
