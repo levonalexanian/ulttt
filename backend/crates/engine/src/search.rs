@@ -48,7 +48,7 @@ pub struct Engine {
     aborted: bool,
     exact: Search,
     opts: Options,
-    stop: Option<Box<dyn Fn() -> bool>>,
+    clock: Option<Box<dyn Fn() -> f32>>,
 }
 
 impl Engine {
@@ -65,15 +65,42 @@ impl Engine {
                 ..ExactOptions::default()
             }),
             opts,
-            stop: None,
+            clock: None,
         }
     }
 
-    /// A condition checked during the heuristic search (every 1024 positions)
-    /// that ends it early, e.g. a clock. The node limit still applies, and the
-    /// exact solver only has its share of it.
-    pub fn set_stop(&mut self, stop: Option<Box<dyn Fn() -> bool>>) {
-        self.stop = stop;
+    /// A clock for each move: the fraction of the move's time used so far. The
+    /// search ends when it reaches 1 (checked every 1024 positions), the exact
+    /// solver gets its share of the time as of the node limit.
+    pub fn set_clock(&mut self, clock: Option<Box<dyn Fn() -> f32>>) {
+        self.clock = clock;
+    }
+
+    fn time_used(&self) -> f32 {
+        self.clock.as_ref().map_or(0.0, |c| c())
+    }
+
+    /// Solves `pos` exactly within `nodes` positions and, with a clock, the
+    /// fraction `time` of the move's time: in growing chunks, which the
+    /// solver's table makes cheap to resume.
+    fn solve_within(&mut self, pos: &Position, nodes: u64, time: f32) -> Option<Value> {
+        let start = self.exact.stats().nodes;
+        let mut chunk = if self.clock.is_some() {
+            nodes.min(4096)
+        } else {
+            nodes
+        };
+        loop {
+            self.exact.set_node_limit(Some(chunk.max(1)));
+            if let Some(v) = self.exact.solve(pos, self.variant) {
+                return Some(v);
+            }
+            let used = self.exact.stats().nodes - start;
+            if used >= nodes || self.time_used() >= time {
+                return None;
+            }
+            chunk = (2 * chunk).min(nodes - used);
+        }
     }
 
     pub fn options(&self) -> &Options {
@@ -99,8 +126,8 @@ impl Engine {
         if pos.empties() <= self.opts.exact_max_empties {
             let before = self.exact.stats().nodes;
             let share = node_limit / self.opts.exact_share;
-            self.exact.set_node_limit(Some(share));
-            value = self.exact.solve(pos, v);
+            let time_share = 1.0 / self.opts.exact_share as f32;
+            value = self.solve_within(pos, share, time_share);
             if let Some(val) = value {
                 let target = for_player(val, me);
                 if target >= 0 {
@@ -113,10 +140,8 @@ impl Engine {
                         let Some(left) = (2 * share).checked_sub(used).filter(|&n| n > 0) else {
                             break;
                         };
-                        self.exact.set_node_limit(Some(left));
                         if self
-                            .exact
-                            .solve(&pos.after(m), v)
+                            .solve_within(&pos.after(m), left, 2.0 * time_share)
                             .map(|c| for_player(c, me))
                             == Some(target)
                         {
@@ -234,8 +259,7 @@ impl Engine {
         ply: i32,
     ) -> i32 {
         self.nodes += 1;
-        if self.nodes >= self.limit
-            || (self.nodes.is_multiple_of(1024) && self.stop.as_ref().is_some_and(|stop| stop()))
+        if self.nodes >= self.limit || (self.nodes.is_multiple_of(1024) && self.time_used() >= 1.0)
         {
             self.aborted = true;
             return 0;
