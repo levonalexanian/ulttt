@@ -49,6 +49,8 @@ pub struct Options {
     pub pvs: bool,
     /// Board-winning moves followed past the horizon (`0` turns it off).
     pub quiescence: u32,
+    /// Try two recent cutoff moves per ply early.
+    pub killers: bool,
     pub weights: Weights,
 }
 
@@ -62,6 +64,7 @@ impl Default for Options {
             leaf_wins: true,
             pvs: true,
             quiescence: 0,
+            killers: true,
             weights: Weights::default(),
         }
     }
@@ -69,7 +72,7 @@ impl Default for Options {
 
 impl Options {
     /// Parses comma-separated `key=value` settings on top of the defaults:
-    /// `tt`, `xtt`, `xmax`, `xshare`, `leafwin`, `pvs` (0 or 1), `qs` (plies), and the weights `global`, `local`,
+    /// `tt`, `xtt`, `xmax`, `xshare`, `leafwin`, `pvs`, `killers` (0 or 1), `qs` (plies), and the weights `global`, `local`,
     /// `majority`, `tempo`, `line1`, `line2`.
     pub fn parse(spec: &str) -> Result<Options, String> {
         let mut o = Options::default();
@@ -91,6 +94,7 @@ impl Options {
                 "tt" => o.tt_bits = int()?.clamp(4, 30),
                 "xtt" => o.exact_tt_bits = int()?.clamp(4, 30),
                 "xmax" => o.exact_max_empties = int()?,
+                "killers" => o.killers = int()? != 0,
                 "qs" => o.quiescence = int()?,
                 "pvs" => o.pvs = int()? != 0,
                 "leafwin" => o.leaf_wins = int()? != 0,
