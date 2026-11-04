@@ -70,6 +70,7 @@ main {
 .global {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
   gap: 8px;
   width: min(100%, 600px);
   aspect-ratio: 1;
@@ -82,6 +83,8 @@ main {
   position: relative;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  min-height: 0;
   gap: 2px;
   padding: 2px;
   background: var(--line);
@@ -94,6 +97,8 @@ main {
 
 .cell {
   display: flex;
+  min-height: 0;
+  min-width: 0;
   align-items: center;
   justify-content: center;
   border: 0;
@@ -310,4 +315,50 @@ summary {
   aside {
     width: 100%;
   }
+}
+
+.notation {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.notation code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  color: var(--ink);
+}
+
+.load {
+  display: flex;
+  gap: 8px;
+}
+
+.load input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.notation button,
+.load button {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.error {
+  color: var(--loss);
 }
