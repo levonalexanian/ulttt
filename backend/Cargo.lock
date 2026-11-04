@@ -325,6 +325,7 @@ dependencies = [
  "clap",
  "ulttt-certificate",
  "ulttt-db",
+ "ulttt-engine",
  "ulttt-game",
  "ulttt-solver",
 ]
