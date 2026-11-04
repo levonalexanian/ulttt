@@ -73,6 +73,11 @@ fn strategy(
     if let Some(o) = pos.result(v) {
         return score_for(o, p) >= r;
     }
+    // Proved in Lean (`valueFor_le_zero_of_mayWin_false`): if the opponent can
+    // no longer win, a draw or better is guaranteed. The checker stops here too.
+    if r <= 0 && !pos.may_win(v, p.other()) {
+        return true;
+    }
     let legal = Moves(pos.legal_moves(v));
     if pos.to_move() == p {
         for m in legal {
@@ -105,6 +110,9 @@ fn check_from(cert: &Certificate, pos: &Position, rest: &mut &[Move]) -> bool {
     let v = cert.variant;
     if let Some(o) = pos.result(v) {
         return score_for(o, cert.player) >= cert.at_least;
+    }
+    if cert.at_least <= 0 && !pos.may_win(v, cert.player.other()) {
+        return true;
     }
     if pos.to_move() == cert.player {
         let Some((&m, tail)) = rest.split_first() else {
