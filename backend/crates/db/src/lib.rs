@@ -14,7 +14,7 @@ pub use rusqlite::Error;
 pub type Result<T> = rusqlite::Result<T>;
 
 /// Schema migrations, applied in order. Never edit a released entry; append.
-const MIGRATIONS: &[&str] = &[include_str!("schema.sql")];
+const MIGRATIONS: &[&str] = &[include_str!("schema.sql"), include_str!("verified.sql")];
 
 /// A benchmark suite.
 #[derive(Clone, Debug, PartialEq)]
@@ -295,6 +295,50 @@ impl Db {
         Ok(())
     }
 
+    /// Records a position whose certificates the Lean checker accepted.
+    pub fn store_verified(
+        &self,
+        variant: Variant,
+        pos: &Position,
+        value: Value,
+        cert_moves: u64,
+        solver: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO verified (variant, position, value, cert_moves, solver)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                variant.name(),
+                pos.to_string(),
+                value_to_sql(value),
+                cert_moves as i64,
+                solver
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The verified value of a position, if any.
+    pub fn lookup_verified(&self, variant: Variant, pos: &Position) -> Result<Option<Value>> {
+        self.conn
+            .query_row(
+                "SELECT value FROM verified WHERE variant = ?1 AND position = ?2",
+                params![variant.name(), pos.to_string()],
+                |r| r.get::<_, i64>(0),
+            )
+            .optional()
+            .map(|v| v.map(value_from_sql))
+    }
+
+    /// Number of verified positions per variant.
+    pub fn verified_counts(&self) -> Result<Vec<(String, u64)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT variant, COUNT(*) FROM verified GROUP BY variant ORDER BY variant")?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as u64)))?
+            .collect()
+    }
+
     /// The stored exact value of a position, if known.
     pub fn lookup_solved(&self, variant: Variant, pos: &Position) -> Result<Option<Value>> {
         self.conn
@@ -359,5 +403,13 @@ mod tests {
             db.lookup_solved(Variant::Classic, &positions[0]).unwrap(),
             None
         );
+
+        db.store_verified(Variant::Open, &positions[1], Value::Draw, 42, "dfpn")
+            .unwrap();
+        assert_eq!(
+            db.lookup_verified(Variant::Open, &positions[1]).unwrap(),
+            Some(Value::Draw)
+        );
+        assert_eq!(db.verified_counts().unwrap(), [("open".to_string(), 1)]);
     }
 }
