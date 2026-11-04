@@ -22,6 +22,8 @@ pub struct Options {
     /// Search the transposition table's best move first, then order the rest
     /// by a static heuristic.
     pub ordering: bool,
+    /// Break ordering ties by how often each move caused a cutoff before.
+    pub history: bool,
 }
 
 impl Default for Options {
@@ -32,13 +34,15 @@ impl Default for Options {
             draw_detection: true,
             immediate_wins: true,
             ordering: true,
+            history: true,
         }
     }
 }
 
 impl Options {
     /// Parses `key=value` pairs separated by commas, e.g. `tt=20,order=0`,
-    /// starting from the defaults. Keys: `tt`, `ttmin`, `draw`, `win`, `order`.
+    /// starting from the defaults. Keys: `tt`, `ttmin`, `draw`, `win`, `order`,
+    /// `hist`.
     pub fn parse(spec: &str) -> Result<Options, String> {
         let mut opts = Options::default();
         for part in spec.split(',').filter(|p| !p.is_empty()) {
@@ -54,6 +58,7 @@ impl Options {
                 "draw" if n <= 1 => opts.draw_detection = n == 1,
                 "win" if n <= 1 => opts.immediate_wins = n == 1,
                 "order" if n <= 1 => opts.ordering = n == 1,
+                "hist" if n <= 1 => opts.history = n == 1,
                 _ => return Err(format!("unknown option {part:?}")),
             }
         }
@@ -69,6 +74,7 @@ impl Options {
             ("draw", self.draw_detection as u32, d.draw_detection as u32),
             ("win", self.immediate_wins as u32, d.immediate_wins as u32),
             ("order", self.ordering as u32, d.ordering as u32),
+            ("hist", self.history as u32, d.history as u32),
         ];
         fields
             .iter()
@@ -85,6 +91,8 @@ pub struct Search {
     stats: Stats,
     node_limit: u64,
     aborted: bool,
+    /// Cutoff counts per move, for each player to move.
+    history: [[u32; 81]; 2],
 }
 
 impl Search {
@@ -96,6 +104,7 @@ impl Search {
             stats: Stats::default(),
             node_limit: u64::MAX,
             aborted: false,
+            history: [[0; 81]; 2],
         }
     }
 
@@ -174,6 +183,10 @@ impl Search {
                 if best > *alpha {
                     *alpha = best;
                     if *alpha >= beta {
+                        if this.opts.history {
+                            let h = &mut this.history[pos.to_move().index()][m as usize];
+                            *h = h.saturating_add(pos.empties() * pos.empties());
+                        }
                         return Some(true);
                     }
                 }
@@ -181,7 +194,8 @@ impl Search {
             Some(false)
         };
         if self.opts.ordering {
-            for &m in order(pos, v, legal, tt_move).as_slice() {
+            for &m in order(pos, v, legal, tt_move, &self.history[pos.to_move().index()]).as_slice()
+            {
                 match search_move(self, m, &mut alpha) {
                     None => return 0,
                     Some(true) => break,
@@ -262,6 +276,7 @@ mod tests {
             "win=0",
             "order=0",
             "order=0,tt=0,win=0,draw=0",
+            "hist=0",
         ];
         let mut rng = Rng::new(42);
         for i in 0..60 {

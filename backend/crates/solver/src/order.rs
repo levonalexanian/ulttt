@@ -34,17 +34,24 @@ pub fn winning_move(pos: &Position, legal: u128) -> Option<Move> {
 }
 
 /// Orders `legal` by a static heuristic, with `first` (e.g. the best move from
-/// the transposition table) ahead of everything.
-pub fn order(pos: &Position, v: Variant, legal: u128, first: Option<Move>) -> Ordered {
+/// the transposition table) ahead of everything. Ties are broken by `history`:
+/// how often each move caused a cutoff before.
+pub fn order(
+    pos: &Position,
+    v: Variant,
+    legal: u128,
+    first: Option<Move>,
+    history: &[u32; 81],
+) -> Ordered {
     let me = pos.to_move();
     let opp = me.other();
     let owned = pos.owned_by(me) | pos.owned_by(opp);
     let closed = pos.closed(v);
-    let mut scored = [(0i32, 0u8); 81];
+    let mut scored = [(0i64, 0u8); 81];
     let mut len = 0;
     for m in Moves(legal) {
         let (b, c) = (board_of(m), cell_of(m));
-        let mut score = 0;
+        let mut score: i64 = 0;
         if first == Some(m) {
             score += 10_000;
         }
@@ -63,10 +70,9 @@ pub fn order(pos: &Position, v: Variant, legal: u128, first: Option<Move>) -> Or
             // The opponent can win the board they are sent to.
             score -= 30;
         }
-        scored[len] = (score, m);
+        scored[len] = (score << 32 | history[m as usize] as i64, m);
         len += 1;
     }
-    // Stable: equal scores keep increasing move order.
     scored[..len].sort_by_key(|&(s, _)| -s);
     let mut moves = [0; 81];
     for (i, &(_, m)) in scored[..len].iter().enumerate() {
