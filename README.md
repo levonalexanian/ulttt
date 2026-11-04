@@ -54,7 +54,7 @@ of 300M nodes per position where noted; the `alphabeta` baseline ran with a
 | open-p42 | | | 20/20, 41M nodes, 31s |
 | classic-p38 | | 20/20, 759M nodes, 197s | 20/20, 48M nodes, 60s |
 | majority-p38 | | 18/20 | 20/20, 280M nodes, 373s |
-| open-p38 | | | 19/20, 935M nodes |
+| open-p38 | | | 19/20, 875M nodes |
 
 All 20 positions of `classic-p46` and `open-p46` are Lean-verified: their
 certificates were accepted by `ulttt-check`.
