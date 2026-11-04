@@ -132,3 +132,32 @@ fn local_threats_match_brute_force() {
         }
     }
 }
+
+/// `hash64` spreads positions over table slots: distinct positions from random
+/// games almost never share a hash, or the low bits used as a table index.
+#[test]
+fn hashes_are_well_spread() {
+    let mut rng = ulttt_game::random::Rng::new(3);
+    let mut positions = std::collections::HashSet::new();
+    for i in 0..2000 {
+        let v = Variant::ALL[i % 3];
+        let mut pos = Position::new();
+        for m in rng.game(v) {
+            pos.play(m);
+            positions.insert(pos);
+        }
+    }
+    let hashes: std::collections::HashSet<u64> = positions.iter().map(|p| p.hash64()).collect();
+    assert_eq!(hashes.len(), positions.len());
+    // With 2^16 slots, the fullest slot should hold only a few times the average.
+    let mut slots = vec![0u32; 1 << 16];
+    for h in &hashes {
+        slots[(h & 0xFFFF) as usize] += 1;
+    }
+    let average = positions.len() as f64 / slots.len() as f64;
+    let fullest = *slots.iter().max().unwrap() as f64;
+    assert!(
+        fullest < 4.0 * average + 8.0,
+        "fullest slot {fullest}, average {average}"
+    );
+}
