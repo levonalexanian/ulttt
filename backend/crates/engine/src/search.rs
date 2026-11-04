@@ -704,6 +704,7 @@ mod tests {
                 v,
                 Options {
                     exact_tt_bits: 16,
+                    exact_max_empties: 55,
                     ..small(14)
                 },
             );

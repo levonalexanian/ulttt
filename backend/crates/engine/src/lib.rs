@@ -4,9 +4,9 @@
 //! line to the end, which is hopeless early in the game. This engine instead
 //! searches as deep as its node budget allows (iterative-deepening alpha-beta)
 //! and scores the positions where it stops with a heuristic ([`Evaluator`]).
-//! When the exact solver can settle the position within part of the budget, the
-//! engine only considers moves that keep the solved value, so it never throws
-//! away a proven win or draw.
+//! Optionally (`xmax`), when the exact solver can settle the position within
+//! part of the budget, the engine only considers moves that keep the solved
+//! value.
 
 mod eval;
 mod mcts;
