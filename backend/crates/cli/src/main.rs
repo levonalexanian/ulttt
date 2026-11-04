@@ -1,6 +1,7 @@
 //! `ulttt`: command-line interface to the engine and solver.
 
 mod bench;
+mod verify;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -79,6 +80,9 @@ enum Command {
     Suites,
     /// Run a solver over a suite and record the results.
     Bench(bench::BenchArgs),
+    /// Certify every position of a suite and check the certificates with Lean,
+    /// recording verified values in the database.
+    Verify(verify::VerifyArgs),
     /// Compare two benchmark runs of the same suite, position by position.
     Compare {
         /// The baseline run.
@@ -118,8 +122,6 @@ fn open_db(path: &PathBuf) -> Db {
     Db::open(path).expect("open database")
 }
 
-/// Solves `pos` and writes the certificates proving its value. A win needs one
-/// certificate (for the winner), a draw two (at least a draw for each player).
 fn certify(
     variant: Variant,
     solver_name: &str,
@@ -127,8 +129,6 @@ fn certify(
     name: &str,
     pos: &Position,
 ) -> ExitCode {
-    use ulttt_game::Player;
-    use ulttt_solver::Value;
     let Some(mut solver) = ulttt_solver::by_name(solver_name) else {
         eprintln!(
             "unknown solver {solver_name:?}; known: {:?}",
@@ -136,23 +136,12 @@ fn certify(
         );
         return ExitCode::FAILURE;
     };
-    let value = solver.solve(pos, variant).expect("no node limit");
-    let claims = match value {
-        Value::XWins => vec![(Player::X, 1)],
-        Value::OWins => vec![(Player::O, 1)],
-        Value::Draw => vec![(Player::X, 0), (Player::O, 0)],
-    };
-    std::fs::create_dir_all(out).expect("create output directory");
-    for (player, at_least) in claims {
-        let cert = ulttt_certificate::generate(solver.as_mut(), pos, variant, player, at_least)
-            .expect("the solved value holds");
-        let path = out.join(format!("{name}-{}.cert", player.symbol()));
-        std::fs::write(&path, cert.to_string()).expect("write certificate");
+    let (value, files) = verify::write_certificates(solver.as_mut(), pos, variant, out, name);
+    for (path, moves) in files {
         println!(
-            "value {}: wrote {} ({} moves)",
+            "value {}: wrote {} ({moves} moves)",
             value.name(),
-            path.display(),
-            cert.moves.len()
+            path.display()
         );
     }
     ExitCode::SUCCESS
@@ -243,6 +232,7 @@ fn main() -> ExitCode {
             }
         }
         Command::Bench(args) => return bench::run(&mut open_db(&cli.db), &args),
+        Command::Verify(args) => return verify::verify_suite(&open_db(&cli.db), &args),
         Command::Compare { a, b } => return bench::print_compare(&open_db(&cli.db), a, b),
         Command::Runs { suite, limit } => {
             let db = open_db(&cli.db);
