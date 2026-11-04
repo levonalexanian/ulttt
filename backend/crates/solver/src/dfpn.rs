@@ -86,6 +86,9 @@ struct Question {
     goal: i8,
     /// Mixed into position hashes so answers to different questions never collide.
     salt: u64,
+    /// The salt of a stronger question by the same attacker, if any: a position
+    /// it proved is proved for this question too (a win is at least a draw).
+    stronger: Option<u64>,
 }
 
 impl Question {
@@ -169,10 +172,15 @@ impl DfPn {
     }
 
     fn key(&self, q: &Question, pos: &Position) -> u64 {
+        self.base_key(pos) ^ q.salt
+    }
+
+    /// The position's hash before mixing in a question's salt.
+    fn base_key(&self, pos: &Position) -> u64 {
         if pos.empties() >= self.sym_min_empties {
-            return pos.canonical().0.hash64() ^ q.salt;
+            return pos.canonical().0.hash64();
         }
-        pos.hash64() ^ q.salt
+        pos.hash64()
     }
 
     fn lookup(&self, q: &Question, pos: &Position) -> (u32, u32) {
@@ -182,7 +190,22 @@ impl DfPn {
         if pos.empties() < self.tt_min_empties {
             return (1, 1);
         }
-        self.tt.get(self.key(q, pos)).unwrap_or((1, 1))
+        let base = self.base_key(pos);
+        if let Some(pd) = self.tt.get(base ^ q.salt) {
+            return pd;
+        }
+        // Proved for the stronger question: the attacker succeeded there.
+        if let Some((phi, delta)) = q.stronger.and_then(|salt| self.tt.get(base ^ salt)) {
+            let mover_is_attacker = pos.to_move() == q.attacker;
+            if (mover_is_attacker && phi == 0) || (!mover_is_attacker && delta == 0) {
+                return if mover_is_attacker {
+                    (0, INF)
+                } else {
+                    (INF, 0)
+                };
+            }
+        }
+        (1, 1)
     }
 
     /// Searches `pos` until its `phi >= th_phi` or `delta >= th_delta`.
@@ -326,16 +349,20 @@ impl Solver for DfPn {
     fn solve(&mut self, pos: &Position, v: Variant) -> Option<Value> {
         self.aborted = false;
         self.limit_now = self.stats.nodes.saturating_add(self.node_limit);
-        let ask = |goal: i8, salt: u64| Question {
+        const WIN: u64 = 0x51ED_2701;
+        const DRAW: u64 = 0xA076_1D64;
+        let ask = |goal: i8, salt: u64, stronger: Option<u64>| Question {
             variant: v,
             attacker: Player::X,
             goal,
             salt,
+            stronger,
         };
-        if self.prove(&ask(1, 0x51ED_2701), pos)? {
+        if self.prove(&ask(1, WIN, None), pos)? {
             return Some(Value::XWins);
         }
-        if self.prove(&ask(0, 0xA076_1D64), pos)? {
+        // Positions where X was proved to win count as at least a draw.
+        if self.prove(&ask(0, DRAW, Some(WIN)), pos)? {
             Some(Value::Draw)
         } else {
             Some(Value::OWins)
