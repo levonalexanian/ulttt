@@ -86,6 +86,22 @@ enum Command {
         #[arg(short = 'n', long, default_value_t = 20)]
         limit: usize,
     },
+    /// Solve a position and write certificates of its value, for `ulttt-check`.
+    Certify {
+        #[arg(short, long, default_value = "classic")]
+        variant: Variant,
+        /// Solver used to pick the strategy's moves.
+        #[arg(long, default_value = "search")]
+        solver: String,
+        /// Directory to write the certificates to.
+        #[arg(short, long, default_value = "data/certificates")]
+        out: PathBuf,
+        /// File name prefix for the certificates.
+        #[arg(long, default_value = "cert")]
+        name: String,
+        /// Position in the text notation.
+        position: Position,
+    },
 }
 
 fn open_db(path: &PathBuf) -> Db {
@@ -95,9 +111,56 @@ fn open_db(path: &PathBuf) -> Db {
     Db::open(path).expect("open database")
 }
 
+/// Solves `pos` and writes the certificates proving its value. A win needs one
+/// certificate (for the winner), a draw two (at least a draw for each player).
+fn certify(
+    variant: Variant,
+    solver_name: &str,
+    out: &std::path::Path,
+    name: &str,
+    pos: &Position,
+) -> ExitCode {
+    use ulttt_game::Player;
+    use ulttt_solver::Value;
+    let Some(mut solver) = ulttt_solver::by_name(solver_name) else {
+        eprintln!(
+            "unknown solver {solver_name:?}; known: {:?}",
+            ulttt_solver::SOLVERS
+        );
+        return ExitCode::FAILURE;
+    };
+    let value = solver.solve(pos, variant).expect("no node limit");
+    let claims = match value {
+        Value::XWins => vec![(Player::X, 1)],
+        Value::OWins => vec![(Player::O, 1)],
+        Value::Draw => vec![(Player::X, 0), (Player::O, 0)],
+    };
+    std::fs::create_dir_all(out).expect("create output directory");
+    for (player, at_least) in claims {
+        let cert = ulttt_certificate::generate(solver.as_mut(), pos, variant, player, at_least)
+            .expect("the solved value holds");
+        let path = out.join(format!("{name}-{}.cert", player.symbol()));
+        std::fs::write(&path, cert.to_string()).expect("write certificate");
+        println!(
+            "value {}: wrote {} ({} moves)",
+            value.name(),
+            path.display(),
+            cert.moves.len()
+        );
+    }
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
+        Command::Certify {
+            variant,
+            solver,
+            out,
+            name,
+            position,
+        } => return certify(variant, &solver, &out, &name, &position),
         Command::Perft {
             variant,
             depth,
