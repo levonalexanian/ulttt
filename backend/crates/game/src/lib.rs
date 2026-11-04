@@ -6,8 +6,10 @@ pub mod lines;
 mod notation;
 mod perft;
 mod position;
+mod symmetry;
 mod types;
 
 pub use perft::perft;
 pub use position::{ALL_CELLS, Move, Moves, Position, board_of, cell_of, mv};
+pub use symmetry::Sym;
 pub use types::{Outcome, Player, Variant};

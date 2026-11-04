@@ -101,6 +101,24 @@ impl Position {
         }
     }
 
+    /// The raw parts: cells, owners, full boards, player to move, board sent to.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn parts(&self) -> ([u128; 2], [u16; 2], u16, Player, Option<u8>) {
+        (self.cells, self.owner, self.full, self.to_move, self.sent())
+    }
+
+    /// A total order on positions, used to pick canonical representatives.
+    #[inline]
+    pub(crate) fn sort_key(&self) -> (u128, u128, u16, u16, u8) {
+        (
+            self.cells[0],
+            self.cells[1],
+            self.owner[0],
+            self.owner[1],
+            self.sent,
+        )
+    }
+
     #[inline]
     pub fn to_move(&self) -> Player {
         self.to_move
