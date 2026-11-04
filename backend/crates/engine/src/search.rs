@@ -348,7 +348,12 @@ impl Engine {
     /// static evaluation.
     fn quiesce(&mut self, pos: &Position, mut alpha: i32, beta: i32, ply: i32, left: u32) -> i32 {
         let v = self.variant;
-        let stand = self.eval.evaluate(pos, v);
+        let mut stand = self.eval.evaluate(pos, v);
+        if self.opts.unsafe_penalty > 0 && !has_safe_move(pos, v) {
+            // Standing pat pretends the player to move could pass; here every
+            // move hands the opponent a board to take or a free choice.
+            stand -= self.opts.unsafe_penalty as i32;
+        }
         if left == 0 || stand >= beta {
             return stand;
         }
@@ -548,6 +553,26 @@ impl Engine {
         };
         best
     }
+}
+
+/// Whether the player to move has a move that sends the opponent to an open
+/// board where the opponent cannot take a board at once.
+fn has_safe_move(pos: &Position, v: Variant) -> bool {
+    let opp = pos.to_move().other();
+    let closed = pos.closed(v);
+    let occupied = pos.occupied();
+    // The local cells (so the boards sent to) the legal moves can use.
+    let mut targets = 0u16;
+    for b in 0..9u8 {
+        if pos.allowed_boards(v) >> b & 1 != 0 {
+            targets |= !((occupied >> (9 * b)) as u16) & 0x1FF;
+        }
+    }
+    (0..9u8).any(|c| {
+        targets >> c & 1 != 0
+            && closed >> c & 1 == 0
+            && (pos.owner(c).is_some() || pos.local_threats(opp, c) == 0)
+    })
 }
 
 /// Forced-result scores count plies from the root; the table stores them
