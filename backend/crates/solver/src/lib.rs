@@ -2,6 +2,7 @@
 //! by `value` in `proofs/Ulttt/Value.lean`.
 
 mod alphabeta;
+mod order;
 mod search;
 mod tt;
 
