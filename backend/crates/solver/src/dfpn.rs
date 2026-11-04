@@ -107,6 +107,8 @@ pub struct DfPn {
     node_limit: u64,
     limit_now: u64,
     aborted: bool,
+    /// Child buffers for `mid`, reused between calls.
+    spare: Vec<Vec<(Position, u32, u32)>>,
 }
 
 impl DfPn {
@@ -120,6 +122,7 @@ impl DfPn {
             node_limit: u64::MAX,
             limit_now: u64::MAX,
             aborted: false,
+            spare: Vec::new(),
         }
     }
 
@@ -175,24 +178,39 @@ impl DfPn {
             self.aborted = true;
             return (1, 1);
         }
+        // Reuse a child buffer from an earlier call: no allocation or
+        // initialization per node once the search has warmed up.
+        let mut children = self.spare.pop().unwrap_or_default();
+        let result = self.expand(q, pos, th_phi, th_delta, &mut children);
+        self.spare.push(children);
+        result
+    }
+
+    /// The body of `mid`, with `children` as scratch space for the children
+    /// and their numbers. The numbers are kept here rather than re-read from
+    /// the table, where they may be overwritten.
+    fn expand(
+        &mut self,
+        q: &Question,
+        pos: &Position,
+        th_phi: u32,
+        th_delta: u32,
+        children: &mut Vec<(Position, u32, u32)>,
+    ) -> (u32, u32) {
         let key = self.key(q, pos);
         let start = self.stats.nodes;
-        // Children and their numbers, on the stack. The numbers are kept here
-        // rather than re-read from the table, where they may be overwritten.
-        let mut children = [Position::new(); 81];
-        let mut pds = [(0u32, 0u32); 81];
-        let mut n = 0;
+        children.clear();
         for m in Moves(pos.legal_moves(q.variant)) {
-            children[n] = pos.after(m);
-            pds[n] = self.lookup(q, &children[n]);
-            n += 1;
+            let child = pos.after(m);
+            let (phi, delta) = self.lookup(q, &child);
+            children.push((child, phi, delta));
         }
 
         loop {
             // phi(n) = min delta(c); delta(n) = sum phi(c).
             let (mut best, mut best_delta, mut second_delta) = (0usize, INF, INF);
             let (mut sum_phi, mut best_phi) = (0u32, 0u32);
-            for (i, &(cphi, cdelta)) in pds[..n].iter().enumerate() {
+            for (i, &(_, cphi, cdelta)) in children.iter().enumerate() {
                 sum_phi = sum_phi.saturating_add(cphi).min(INF);
                 if cdelta < best_delta {
                     second_delta = best_delta;
@@ -225,7 +243,10 @@ impl DfPn {
                         .saturating_add(1),
                 )
                 .min(INF);
-            pds[best] = self.mid(q, &children[best], child_th_phi, child_th_delta);
+            let child = children[best].0;
+            let (cphi, cdelta) = self.mid(q, &child, child_th_phi, child_th_delta);
+            children[best].1 = cphi;
+            children[best].2 = cdelta;
             if self.aborted {
                 return (1, 1);
             }
