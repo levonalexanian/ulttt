@@ -116,14 +116,9 @@ pub fn analyze(variant_name: &str, pos: &str, node_limit: u32) -> Result<Vec<i32
     }))
 }
 
-/// The engine's move for the player to move, searching about `node_limit`
-/// positions; `-1` if the game is over. Uses the heuristic engine, which plays
-/// sensibly long before the exact solver can say anything, and keeps proven
-/// wins and draws once it can.
-#[wasm_bindgen(js_name = bestMove)]
-pub fn best_move(variant_name: &str, pos: &str, node_limit: u32) -> Result<i32, JsError> {
-    let (v, pos) = (variant(variant_name)?, position(pos)?);
-    Ok(ENGINE.with(|cell| {
+/// Runs `f` with the playing engine for variant `v`, made on first use.
+fn with_engine<T>(v: Variant, f: impl FnOnce(&mut Engine) -> T) -> T {
+    ENGINE.with(|cell| {
         let mut slot = cell.borrow_mut();
         if slot.as_ref().is_none_or(|e| e.variant() != v) {
             *slot = Some(Engine::new(
@@ -135,10 +130,61 @@ pub fn best_move(variant_name: &str, pos: &str, node_limit: u32) -> Result<i32, 
                 },
             ));
         }
-        let engine = slot.as_mut().expect("just set");
+        f(slot.as_mut().expect("just set"))
+    })
+}
+
+/// The engine's move for the player to move, searching about `node_limit`
+/// positions; `-1` if the game is over. Uses the heuristic engine, which plays
+/// sensibly long before the exact solver can say anything, and keeps proven
+/// wins and draws once it can.
+#[wasm_bindgen(js_name = bestMove)]
+pub fn best_move(variant_name: &str, pos: &str, node_limit: u32) -> Result<i32, JsError> {
+    let (v, pos) = (variant(variant_name)?, position(pos)?);
+    Ok(with_engine(v, |engine| {
+        engine.set_clock(None);
         engine
             .best_move(&pos, node_limit as u64)
             .map_or(-1, |c| c.mv as i32)
+    }))
+}
+
+#[wasm_bindgen]
+extern "C" {
+    /// Milliseconds since the epoch, from JavaScript.
+    #[wasm_bindgen(js_namespace = Date)]
+    fn now() -> f64;
+}
+
+/// Nodes the engine is allowed per millisecond in [`think`]: above its speed
+/// in a browser, so the clock is what ends the search, while still bounding
+/// the exact solver's share.
+const NODES_PER_MS: u64 = 3_000;
+
+/// Thinks for about `ms` milliseconds and returns `[move, score, depth,
+/// value, nodes]`: the move (`-1` if the game is over), its heuristic score
+/// for the mover (beyond ±999000 a forced result), the search depth, the exact
+/// value of the position from X's point of view if found (`1`, `0`, `-1`,
+/// otherwise [`UNKNOWN`]), and the positions searched.
+#[wasm_bindgen]
+pub fn think(variant_name: &str, pos: &str, ms: u32) -> Result<Vec<f64>, JsError> {
+    let (v, pos) = (variant(variant_name)?, position(pos)?);
+    let start = now();
+    let total = f64::from(ms.max(1));
+    Ok(with_engine(v, |engine| {
+        engine.set_clock(Some(Box::new(move || ((now() - start) / total) as f32)));
+        let choice = engine.best_move(&pos, u64::from(ms) * NODES_PER_MS);
+        engine.set_clock(None);
+        match choice {
+            None => vec![-1.0, 0.0, 0.0, f64::from(UNKNOWN), 0.0],
+            Some(c) => vec![
+                f64::from(c.mv),
+                f64::from(c.score),
+                f64::from(c.depth),
+                f64::from(c.value.map_or(UNKNOWN, |v| v as i32)),
+                c.nodes as f64,
+            ],
+        }
     }))
 }
 
