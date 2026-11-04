@@ -38,6 +38,18 @@ const LOWER: u8 = 1;
 const UPPER: u8 = 2;
 const NO_MOVE: u8 = 255;
 
+/// Moves in search order, on the stack.
+struct MoveList {
+    moves: [Move; 81],
+    len: usize,
+}
+
+impl MoveList {
+    fn as_slice(&self) -> &[Move] {
+        &self.moves[..self.len]
+    }
+}
+
 /// A playing engine for one variant. Keeps its tables between moves.
 pub struct Engine {
     variant: Variant,
@@ -174,7 +186,7 @@ impl Engine {
         for h in self.history.iter_mut().flatten() {
             *h /= 8;
         }
-        let mut moves: Vec<Move> = self.ordered(pos, candidates, NO_MOVE);
+        let mut moves: Vec<Move> = self.ordered(pos, candidates, NO_MOVE).as_slice().to_vec();
         let mut best = (moves[0], 0, 0);
         if moves.len() == 1 {
             // Still worth a score for the caller; a shallow search is enough.
@@ -218,36 +230,55 @@ impl Engine {
 
     /// `candidates` in the order to search them: the table's move, then local
     /// wins and blocks, avoiding sending the opponent where they want to go.
-    fn ordered(&self, pos: &Position, candidates: u128, tt_move: u8) -> Vec<Move> {
+    fn ordered(&self, pos: &Position, candidates: u128, tt_move: u8) -> MoveList {
         let v = self.variant;
         let me = pos.to_move();
         let closed = pos.closed(v);
-        let mut scored: Vec<(i32, Move)> = Moves(candidates)
-            .map(|m| {
-                let (b, c) = (board_of(m), cell_of(m));
-                let mut s = self.history[me.index()][m as usize];
-                if m == tt_move {
-                    s += 1 << 30;
-                }
-                let unowned = pos.owner(b).is_none();
-                if unowned && pos.local_threats(me, b) >> c & 1 != 0 {
-                    s += 1 << 24;
-                } else if unowned && pos.local_threats(me.other(), b) >> c & 1 != 0 {
-                    s += 1 << 22;
-                }
-                // Where the opponent is sent: anywhere if that board is closed
-                // (or this move closes it), or a board they can win right away.
-                let closes = c == b && (pos.local_threats(me, b) >> c & 1 != 0);
-                if closed >> c & 1 != 0 || closes {
-                    s -= 1 << 23;
-                } else if pos.owner(c).is_none() && pos.local_threats(me.other(), c) != 0 {
-                    s -= 1 << 21;
-                }
-                (s, m)
-            })
-            .collect();
-        scored.sort_unstable_by_key(|a| std::cmp::Reverse(a.0));
-        scored.into_iter().map(|(_, m)| m).collect()
+        let owned = pos.owned_by(Player::X) | pos.owned_by(Player::O);
+        // Each board's completing cells for both players, computed once.
+        let mut mine = [0u16; 9];
+        let mut theirs = [0u16; 9];
+        for b in 0..9u8 {
+            if owned >> b & 1 == 0 {
+                mine[b as usize] = pos.local_threats(me, b);
+                theirs[b as usize] = pos.local_threats(me.other(), b);
+            }
+        }
+        let history = &self.history[me.index()];
+        let mut scored = [(0i32, 0u8); 81];
+        let mut n = 0;
+        for m in Moves(candidates) {
+            let (b, c) = (board_of(m) as usize, cell_of(m));
+            let mut s = history[m as usize];
+            if m == tt_move {
+                s += 1 << 30;
+            }
+            let wins_board = mine[b] >> c & 1 != 0;
+            if wins_board {
+                s += 1 << 24;
+            } else if theirs[b] >> c & 1 != 0 {
+                s += 1 << 22;
+            }
+            // Where the opponent is sent: anywhere if that board is closed (or
+            // this move closes it), or a board they can win right away.
+            let closes = c as usize == b && wins_board;
+            if closed >> c & 1 != 0 || closes {
+                s -= 1 << 23;
+            } else if theirs[c as usize] != 0 {
+                s -= 1 << 21;
+            }
+            scored[n] = (s, m);
+            n += 1;
+        }
+        scored[..n].sort_unstable_by_key(|a| std::cmp::Reverse(a.0));
+        let mut list = MoveList {
+            moves: [0; 81],
+            len: n,
+        };
+        for (i, &(_, m)) in scored[..n].iter().enumerate() {
+            list.moves[i] = m;
+        }
+        list
     }
 
     fn negamax(
@@ -311,11 +342,8 @@ impl Engine {
         let original_alpha = alpha;
         let mut best = -WIN - 1;
         let mut best_move = NO_MOVE;
-        for (i, m) in self
-            .ordered(pos, pos.legal_moves(v), tt_move)
-            .into_iter()
-            .enumerate()
-        {
+        let list = self.ordered(pos, pos.legal_moves(v), tt_move);
+        for (i, &m) in list.as_slice().iter().enumerate() {
             let child = pos.after(m);
             let s = if i == 0 || !self.opts.pvs {
                 -self.negamax(&child, depth - 1, -beta, -alpha, ply + 1)
