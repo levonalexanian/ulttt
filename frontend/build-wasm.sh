@@ -3,5 +3,6 @@
 # JavaScript bindings in src/wasm/.
 set -eu
 cd "$(dirname "$0")"
-cargo build --release --target wasm32-unknown-unknown -p ulttt-wasm --manifest-path ../backend/Cargo.toml
+# Run cargo from backend/ so its rust-toolchain.toml (with the wasm target) applies.
+(cd ../backend && cargo build --release --target wasm32-unknown-unknown -p ulttt-wasm)
 wasm-bindgen --target web --out-dir src/wasm ../backend/target/wasm32-unknown-unknown/release/ulttt_wasm.wasm
