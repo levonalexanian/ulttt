@@ -47,6 +47,8 @@ export function App() {
   const [values, setValues] = useState<Map<number, Value> | null>(null);
   const [posValue, setPosValue] = useState<Value | null>(null);
   const [thinking, setThinking] = useState(false);
+  const [loadText, setLoadText] = useState("");
+  const [loadError, setLoadError] = useState("");
   // Bumped on every change, so answers about an older position are ignored.
   const generation = useRef(0);
 
@@ -69,6 +71,21 @@ export function App() {
     if (moves.length === 0) return;
     setHistory((h) => h.slice(0, Math.max(1, h.length - steps)));
     setMoves((m) => m.slice(0, Math.max(0, m.length - steps)));
+  }
+
+  /** Starts from a position given in the engine's notation, e.g. one from the CLI. */
+  async function loadPosition(text: string) {
+    const s = text.trim();
+    try {
+      await engine.legalMoves(variant, s);
+    } catch {
+      setLoadError("Not a valid position");
+      return;
+    }
+    setLoadError("");
+    generation.current++;
+    setHistory([s]);
+    setMoves([]);
   }
 
   async function playMove(move: number) {
@@ -214,6 +231,29 @@ export function App() {
               </li>
             ))}
           </ol>
+          <details>
+            <summary>Position</summary>
+            <p className="notation">
+              <code>{current}</code>
+              <button onClick={() => navigator.clipboard?.writeText(current)}>Copy</button>
+            </p>
+            <form
+              className="load"
+              onSubmit={(e) => {
+                e.preventDefault();
+                loadPosition(loadText);
+              }}
+            >
+              <input
+                value={loadText}
+                onChange={(e) => setLoadText(e.target.value)}
+                placeholder="Paste a position, e.g. from `ulttt random`"
+                aria-label="Position to load"
+              />
+              <button type="submit">Load</button>
+            </form>
+            {loadError ? <p className="error">{loadError}</p> : null}
+          </details>
           <details>
             <summary>Rules</summary>
             <p>
