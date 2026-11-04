@@ -114,6 +114,59 @@ fn known_values(db: &Db, suite: &str) -> HashMap<usize, Value> {
     known
 }
 
+/// Compares two runs position by position: nodes and time, with geometric-mean
+/// ratios over the positions both solved. A ratio below 1 means `b` is better.
+pub fn print_compare(db: &Db, a: i64, b: i64) -> ExitCode {
+    let (ra, rb) = (
+        db.run_results(a).expect("run results"),
+        db.run_results(b).expect("run results"),
+    );
+    if ra.is_empty() || rb.is_empty() {
+        eprintln!("run {a} or {b} has no results");
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "{:>4}  {:>14} {:>14} {:>7}  {:>9} {:>9} {:>7}",
+        "pos", "nodes a", "nodes b", "ratio", "secs a", "secs b", "ratio"
+    );
+    let (mut log_nodes, mut log_time, mut both) = (0.0f64, 0.0f64, 0usize);
+    for x in &ra {
+        let Some(y) = rb.iter().find(|y| y.idx == x.idx) else {
+            continue;
+        };
+        let show = |r: &ulttt_db::RunResult| match r.value {
+            Some(_) => format!("{}", r.nodes),
+            None => format!(">{}", r.nodes),
+        };
+        let solved = x.value.is_some() && y.value.is_some();
+        let node_ratio = y.nodes as f64 / x.nodes.max(1) as f64;
+        let time_ratio = y.micros as f64 / x.micros.max(1) as f64;
+        if solved {
+            log_nodes += node_ratio.ln();
+            log_time += time_ratio.ln();
+            both += 1;
+        }
+        println!(
+            "{:>4}  {:>14} {:>14} {:>7.3}  {:>9.3} {:>9.3} {:>7.3}",
+            x.idx,
+            show(x),
+            show(y),
+            node_ratio,
+            x.micros as f64 / 1e6,
+            y.micros as f64 / 1e6,
+            time_ratio
+        );
+    }
+    if both > 0 {
+        println!(
+            "geometric mean over {both} positions solved by both: nodes {:.3}x, time {:.3}x",
+            (log_nodes / both as f64).exp(),
+            (log_time / both as f64).exp()
+        );
+    }
+    ExitCode::SUCCESS
+}
+
 /// Prints a table of recent runs.
 pub fn print_runs(db: &Db, suite: Option<&str>, limit: usize) {
     println!(
