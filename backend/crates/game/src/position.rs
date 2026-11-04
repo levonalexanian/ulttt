@@ -1,4 +1,4 @@
-use crate::lines::{FULL, has_line};
+use crate::lines::{FULL, has_line, line_avoiding};
 use crate::types::{Outcome, Player, Variant};
 
 /// A move is one of the 81 cells: cell `m % 9` of local board `m / 9`.
@@ -209,6 +209,34 @@ impl Position {
             Variant::Open => self.full,
             Variant::Classic | Variant::Majority => self.owner[0] | self.owner[1] | self.full,
         }
+    }
+
+    /// Local boards that player `p` owns or might still win, as a 9-bit mask: an
+    /// over-approximation. An unowned board can still be won if it is not
+    /// closed and some line on it holds no opponent mark.
+    pub fn winnable_boards(&self, v: Variant, p: Player) -> u16 {
+        let opp = self.cells[p.other().index()];
+        let mut mask = self.owner[p.index()];
+        let candidates = !(self.owner[0] | self.owner[1] | self.closed(v)) & FULL;
+        for b in 0..9u8 {
+            if candidates >> b & 1 != 0 && line_avoiding(Self::local(opp, b)) {
+                mask |= 1 << b;
+            }
+        }
+        mask
+    }
+
+    /// Whether player `p` might still win the game: `false` means `p` can do no
+    /// better than a draw. Sound but not exact: `true` does not mean `p` can
+    /// force a win, or even that some sequence of moves leads to one.
+    pub fn may_win(&self, v: Variant, p: Player) -> bool {
+        let winnable = self.winnable_boards(v, p);
+        if has_line(winnable) {
+            return true;
+        }
+        // In `majority` a player can also win on board count, as long as they
+        // can end up with more boards than the opponent already owns.
+        v == Variant::Majority && winnable.count_ones() > self.won_count(p.other())
     }
 
     /// Whether player `p` owns three local boards in a line.

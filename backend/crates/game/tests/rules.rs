@@ -74,3 +74,37 @@ fn line_on_a_won_board_does_not_change_owner() {
     assert_eq!(play_all(&moves).owner(0), Some(Player::X));
     assert!(!all_legal(Variant::Classic, &moves));
 }
+
+/// `may_win` never rules out a player who goes on to win, and once it rules a
+/// player out it stays that way.
+#[test]
+fn may_win_is_sound_and_monotone() {
+    let mut rng = ulttt_game::random::Rng::new(7);
+    for i in 0..3000 {
+        let v = Variant::ALL[i % 3];
+        let moves = rng.game(v);
+        let mut pos = Position::new();
+        let mut history = vec![pos];
+        for &m in &moves {
+            pos.play(m);
+            history.push(pos);
+        }
+        let winner = match pos.outcome(v) {
+            ulttt_game::Outcome::Win(p) => Some(p),
+            ulttt_game::Outcome::Draw => None,
+        };
+        for p in [Player::X, Player::O] {
+            let flags: Vec<bool> = history.iter().map(|h| h.may_win(v, p)).collect();
+            if winner == Some(p) {
+                assert!(
+                    flags.iter().all(|&f| f),
+                    "{v}: winner ruled out in {moves:?}"
+                );
+            }
+            assert!(
+                flags.windows(2).all(|w| w[0] || !w[1]),
+                "{v}: may_win came back for {p:?} in {moves:?}"
+            );
+        }
+    }
+}
