@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - working-directory: backend
-        run: rustup show
+        run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
