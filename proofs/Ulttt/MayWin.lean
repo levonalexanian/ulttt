@@ -1,5 +1,5 @@
-import Ulttt.Certificate
 import Ulttt.Theorems
+import Ulttt.ValueFor
 
 /-! When can a player no longer win?
 
@@ -243,57 +243,6 @@ theorem scoreFor_le_zero_of_mayWin_false {p : Player} (h : s.mayWin v p = false)
         split <;> simp [Outcome.scoreFor, Outcome.score]
 
 end State
-
-/-! ### Soundness -/
-
-theorem valueFor_le_of_all {v : Variant} {p : Player} {s : State} {r : Int}
-    (hr : -1 ≤ r) (hnt : s.terminal v = false) (hp : s.toMove = p)
-    (h : ∀ m, s.legal v m = true → valueFor v p (s.play m) ≤ r) : valueFor v p s ≤ r := by
-  have hall : ∀ x ∈ (s.legalMoves v).map (fun m => value v (s.play m)),
-      ∃ m, s.legal v m = true ∧ x = value v (s.play m) := by
-    intro x hx
-    obtain ⟨m, hm, rfl⟩ := List.mem_map.mp hx
-    exact ⟨m, State.mem_legalMoves.mp hm, rfl⟩
-  cases p with
-  | X =>
-    simp only [valueFor] at h ⊢
-    rw [value_unfold v s]
-    simp only [hnt, Bool.false_eq_true, ↓reduceIte, hp]
-    apply ge_foldl_max _ _ _ hr
-    intro x hx
-    obtain ⟨m, hm, rfl⟩ := hall x hx
-    exact h m hm
-  | O =>
-    simp only [valueFor] at h ⊢
-    rw [value_unfold v s]
-    simp only [hnt, Bool.false_eq_true, ↓reduceIte, hp]
-    have : -r ≤ ((s.legalMoves v).map fun m => value v (s.play m)).foldl min 1 := by
-      apply le_foldl_min _ _ _ (by omega)
-      intro x hx
-      obtain ⟨m, hm, rfl⟩ := hall x hx
-      have := h m hm
-      omega
-    omega
-
-theorem valueFor_le_of_exists {v : Variant} {p : Player} {s : State} {r : Int}
-    (hnt : s.terminal v = false) (hp : s.toMove ≠ p) {m : Move} (hm : s.legal v m = true)
-    (h : valueFor v p (s.play m) ≤ r) : valueFor v p s ≤ r := by
-  have hmem : value v (s.play m) ∈ (s.legalMoves v).map fun m => value v (s.play m) :=
-    List.mem_map.mpr ⟨m, State.mem_legalMoves.mpr hm, rfl⟩
-  cases p with
-  | X =>
-    have hO : s.toMove = .O := by cases h' : s.toMove <;> simp_all
-    simp only [valueFor] at h ⊢
-    rw [value_unfold v s]
-    simp only [hnt, Bool.false_eq_true, ↓reduceIte, hO]
-    exact Int.le_trans (foldl_min_le_mem _ _ _ hmem) h
-  | O =>
-    have hX : s.toMove = .X := by cases h' : s.toMove <;> simp_all
-    simp only [valueFor] at h ⊢
-    rw [value_unfold v s]
-    simp only [hnt, Bool.false_eq_true, ↓reduceIte, hX]
-    have := foldl_max_ge_mem _ (-1) _ hmem
-    omega
 
 /-- **Soundness of `mayWin`**: a player it rules out can at best draw. -/
 theorem valueFor_le_zero_of_mayWin_false (v : Variant) (p : Player) (s : State)

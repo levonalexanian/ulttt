@@ -3,9 +3,10 @@ import Ulttt.State
 import Ulttt.Rules
 import Ulttt.Value
 import Ulttt.Theorems
+import Ulttt.ValueFor
 import Ulttt.Fast
-import Ulttt.Certificate
 import Ulttt.MayWin
+import Ulttt.Certificate
 import Ulttt.Examples
 import Ulttt.Symmetry
 import Ulttt.SymmetryRules
