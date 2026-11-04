@@ -1,0 +1,313 @@
+:root {
+  --bg: #f6f5f1;
+  --panel: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6b70;
+  --line: #d9d7cf;
+  --line-strong: #8f8c82;
+  --x: #d1495b;
+  --o: #2e86ab;
+  --playable: #fff4c8;
+  --last: #ffe08a;
+  --win: #2f9e44;
+  --draw: #868e96;
+  --loss: #e03131;
+  --unknown: #f0c419;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17171a;
+    --panel: #222226;
+    --ink: #ececef;
+    --muted: #9a9aa2;
+    --line: #3a3a40;
+    --line-strong: #6c6c75;
+    --x: #ff6b7d;
+    --o: #5ec2ea;
+    --playable: #3a3520;
+    --last: #5a4c1a;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.8rem;
+  letter-spacing: 0.02em;
+}
+
+.tagline {
+  margin: 4px 0 16px;
+  color: var(--muted);
+}
+
+main {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.global {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: min(100%, 600px);
+  aspect-ratio: 1;
+  padding: 8px;
+  background: var(--line-strong);
+  border-radius: 12px;
+}
+
+.local {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  background: var(--line);
+  border-radius: 6px;
+}
+
+.local.playable {
+  box-shadow: 0 0 0 3px var(--unknown);
+}
+
+.cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 3px;
+  background: var(--panel);
+  padding: 0;
+  font-size: clamp(14px, 3.6vw, 26px);
+  cursor: pointer;
+  position: relative;
+}
+
+.local.playable .cell:not(:disabled) {
+  background: var(--playable);
+}
+
+.cell:disabled {
+  cursor: default;
+}
+
+.cell:not(:disabled):hover {
+  outline: 2px solid var(--line-strong);
+}
+
+.cell.last {
+  background: var(--last);
+}
+
+.mark-x {
+  color: var(--x);
+  font-weight: 700;
+}
+
+.mark-o {
+  color: var(--o);
+  font-weight: 700;
+}
+
+/* Analysis: a dot in each legal cell. */
+.cell[class*="v-"]::after,
+.dot {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.cell[class*="v-"]::after {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+}
+
+.v-win::after,
+.dot.v-win {
+  background: var(--win);
+}
+.v-draw::after,
+.dot.v-draw {
+  background: var(--draw);
+}
+.v-loss::after,
+.dot.v-loss {
+  background: var(--loss);
+}
+.v-unknown::after,
+.dot.v-unknown {
+  background: var(--unknown);
+}
+
+.owner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(48px, 13vw, 120px);
+  font-weight: 800;
+  pointer-events: none;
+  border-radius: 6px;
+}
+
+/* Won boards are covered, except in `open` where they stay playable: the
+   covering is translucent so the cells beneath remain visible. */
+.local.won .owner {
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}
+
+.owner-x {
+  color: var(--x);
+}
+
+.owner-o {
+  color: var(--o);
+}
+
+aside {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.status {
+  font-size: 1.3rem;
+  font-weight: 600;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-radius: 10px;
+}
+
+.status.over {
+  box-shadow: inset 4px 0 0 var(--win);
+}
+
+.controls {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  background: var(--panel);
+  border-radius: 10px;
+}
+
+.controls label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.controls select {
+  font: inherit;
+  padding: 4px 8px;
+  min-width: 140px;
+}
+
+.controls .toggle {
+  justify-content: flex-start;
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.buttons button {
+  flex: 1;
+  font: inherit;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.analysis {
+  padding: 12px 16px;
+  background: var(--panel);
+  border-radius: 10px;
+}
+
+.analysis p {
+  margin: 4px 0;
+}
+
+.legend {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.legend .dot {
+  margin: 0 2px 0 8px;
+  vertical-align: middle;
+}
+
+.moves {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 12px 16px 12px 40px;
+  background: var(--panel);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.moves:empty {
+  display: none;
+}
+
+details {
+  padding: 12px 16px;
+  background: var(--panel);
+  border-radius: 10px;
+  color: var(--muted);
+}
+
+summary {
+  cursor: pointer;
+  color: var(--ink);
+}
+
+@media (max-width: 700px) {
+  main {
+    flex-direction: column;
+  }
+  aside {
+    width: 100%;
+  }
+}
