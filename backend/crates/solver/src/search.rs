@@ -11,11 +11,17 @@ use crate::{Solver, Stats, Value};
 pub struct Options {
     /// Transposition table size as a power of two; `0` disables it.
     pub tt_bits: u32,
+    /// Only use the transposition table in positions with at least this many
+    /// empty cells. Near the leaves, probing costs more than it saves.
+    pub tt_min_empties: u32,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { tt_bits: 24 }
+        Options {
+            tt_bits: 24,
+            tt_min_empties: 12,
+        }
     }
 }
 
@@ -33,6 +39,7 @@ impl Options {
                 .map_err(|_| format!("bad value in {part:?}"))?;
             match key {
                 "tt" if n <= 32 => opts.tt_bits = n,
+                "ttmin" => opts.tt_min_empties = n,
                 _ => return Err(format!("unknown option {part:?}")),
             }
         }
@@ -45,6 +52,9 @@ impl Options {
         let mut parts = Vec::new();
         if self.tt_bits != default.tt_bits {
             parts.push(format!("tt={}", self.tt_bits));
+        }
+        if self.tt_min_empties != default.tt_min_empties {
+            parts.push(format!("ttmin={}", self.tt_min_empties));
         }
         parts.join(",")
     }
@@ -84,8 +94,13 @@ impl Search {
             return if pos.to_move() == Player::X { x } else { -x };
         }
 
-        let key = pos.hash64();
-        if let Some((lower, upper)) = self.tt.as_ref().and_then(|t| t.probe(key)) {
+        let use_tt = self.tt.is_some() && pos.empties() >= self.opts.tt_min_empties;
+        let key = if use_tt { pos.hash64() } else { 0 };
+        let entry = match &self.tt {
+            Some(t) if use_tt => t.probe(key),
+            _ => None,
+        };
+        if let Some((lower, upper)) = entry {
             if lower >= beta || lower == upper {
                 return lower;
             }
@@ -114,7 +129,7 @@ impl Search {
             }
         }
 
-        if let Some(t) = self.tt.as_mut() {
+        if let Some(t) = self.tt.as_mut().filter(|_| use_tt) {
             let (lower, upper) = if best <= alpha0 {
                 (-1, best)
             } else if best >= beta {
@@ -163,7 +178,7 @@ mod tests {
     /// Every configuration agrees with the baseline on random endgames.
     #[test]
     fn agrees_with_alphabeta() {
-        let configs = ["", "tt=0", "tt=10"];
+        let configs = ["", "tt=0", "tt=10", "ttmin=0"];
         let mut rng = Rng::new(42);
         for i in 0..60 {
             let v = Variant::ALL[i % 3];
