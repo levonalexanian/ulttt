@@ -64,6 +64,9 @@ pub struct Options {
     /// Search moves from this index on (in move order) one ply shallower
     /// first, at depth 3 or more (`0` turns it off).
     pub lmr: u32,
+    /// Half-width of the root's aspiration window from depth 4 (`0` turns
+    /// it off).
+    pub aspiration: u32,
     pub weights: Weights,
 }
 
@@ -80,6 +83,7 @@ impl Default for Options {
             killers: true,
             tt_buckets: false,
             lmr: 0,
+            aspiration: 0,
             weights: Weights::default(),
         }
     }
@@ -108,6 +112,7 @@ impl Options {
                 "tt" => o.tt_bits = int()?.clamp(4, 30),
                 "xtt" => o.exact_tt_bits = int()?.clamp(4, 30),
                 "xmax" => o.exact_max_empties = int()?,
+                "asp" => o.aspiration = int()?,
                 "lmr" => o.lmr = int()?,
                 "tt2" => o.tt_buckets = int()? != 0,
                 "killers" => o.killers = int()? != 0,
