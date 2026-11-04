@@ -81,6 +81,26 @@ impl Position {
         }
     }
 
+    /// Builds a position from its raw parts. `full` must match `cells`.
+    pub(crate) const fn from_parts(
+        cells: [u128; 2],
+        owner: [u16; 2],
+        full: u16,
+        to_move: Player,
+        sent: Option<u8>,
+    ) -> Self {
+        Position {
+            cells,
+            owner,
+            full,
+            to_move,
+            sent: match sent {
+                Some(b) => b,
+                None => NOT_SENT,
+            },
+        }
+    }
+
     #[inline]
     pub fn to_move(&self) -> Player {
         self.to_move

@@ -3,6 +3,7 @@
 //! The rules follow `RULES.md` and mirror the Lean formalization in `proofs/`.
 
 pub mod lines;
+mod notation;
 mod position;
 mod types;
 
