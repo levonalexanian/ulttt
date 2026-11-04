@@ -82,6 +82,10 @@ impl Solver for AlphaBeta {
     fn stats(&self) -> Stats {
         self.stats
     }
+
+    fn reset(&mut self) {
+        self.stats = Stats::default();
+    }
 }
 
 #[cfg(test)]

@@ -54,9 +54,12 @@ pub fn run(db: &mut Db, args: &BenchArgs) -> ExitCode {
 
     let mut mismatches = 0;
     let (mut total_nodes, mut total_micros, mut solved) = (0u64, 0u64, 0usize);
+    // One solver for the whole run, reset before each position: every position
+    // is solved from scratch, without paying to allocate memory each time.
+    let mut solver = ulttt_solver::by_name(&args.solver).expect("checked above");
+    solver.set_node_limit(args.node_limit);
     for (i, pos) in suite.positions.iter().enumerate() {
-        let mut solver = ulttt_solver::by_name(&args.solver).expect("checked above");
-        solver.set_node_limit(args.node_limit);
+        solver.reset();
         let start = Instant::now();
         let value = solver.solve(pos, suite.variant);
         let micros = start.elapsed().as_micros() as u64;

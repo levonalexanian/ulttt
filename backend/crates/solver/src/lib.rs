@@ -76,4 +76,8 @@ pub trait Solver {
 
     /// Counters for the searches run so far.
     fn stats(&self) -> Stats;
+
+    /// Forgets everything learned and resets the counters, so the next search
+    /// runs as on a fresh solver, but reuses allocated memory.
+    fn reset(&mut self);
 }
