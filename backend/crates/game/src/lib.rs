@@ -6,6 +6,7 @@ pub mod lines;
 mod notation;
 mod perft;
 mod position;
+pub mod random;
 mod symmetry;
 mod types;
 
