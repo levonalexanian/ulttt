@@ -18,7 +18,7 @@ Three rule variants are supported everywhere; see [`RULES.md`](RULES.md):
 | Rules in Lean | `proofs/` | The three variants, the game value, and proofs: games end, symmetries preserve value, `mayWin` pruning is sound, the certificate checker is sound |
 | Engine | `backend/crates/game` | Bitboard rules, symmetries, notation, perft |
 | Solvers | `backend/crates/solver` | `dfpn`: depth-first proof-number search (the default). `search`: alpha-beta with a lock-free transposition table, draw detection, move ordering, history heuristic and parallel search. `alphabeta`: the plain baseline |
-| Playing engine | `backend/crates/engine` | For positions too deep to solve: iterative-deepening alpha-beta (transposition table, PVS, killer and history ordering) over a heuristic evaluation, switching to the exact solver once it can finish; also a Monte Carlo tree search engine. Drives the frontend's moves |
+| Playing engine | `backend/crates/engine` | For positions too deep to solve: iterative-deepening alpha-beta (transposition table, PVS, killer and history ordering, quiescence) over a heuristic evaluation tuned per variant; also a Monte Carlo tree search engine. Drives the frontend's moves |
 | Certificates | `backend/crates/certificate` | Strategy certificates for solved positions, checked by `ulttt-check` (Lean) |
 | Storage | `backend/crates/db` | SQLite: benchmark suites, runs, solved and Lean-verified positions |
 | CLI | `backend/crates/cli` | `ulttt perft`, `solve [--pv]`, `certify`, `verify`, `suite-create`, `bench`, `runs`, `compare`, `match`, `matches`, `engine-bench` |
@@ -77,6 +77,7 @@ at 20k nodes per move. The margins are 95% intervals.
 | Evaluation weights tuned on self-play games (`ulttt texel`), per variant | +37 ±18 Elo (classic, 800 games), +38 ±22 (majority); open keeps the untuned weights (+10 ±22) |
 | Win-in-one at the horizon, PVS | +20, +14 ±26 Elo |
 | Killer moves, two-entry table buckets, late move reductions, aspiration windows | no significant gain; off or kept neutral |
+| Not calling the exact solver at the root (its share of the budget goes to the search) | +21 ±18 Elo (classic), +29 ±25 (classic, 200k nodes), +15 and +14 ±22 (majority, open) |
 | Monte Carlo tree search instead of alpha-beta | -127 to -207 Elo at 100 ms per move |
 
 `ulttt engine-accuracy` checks the engine against known values: on the

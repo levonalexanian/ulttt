@@ -96,7 +96,8 @@ pub struct Options {
     /// Exact solver table size as a power of two.
     pub exact_tt_bits: u32,
     /// Try the exact solver in positions with at most this many empty cells
-    /// (`0` never tries it).
+    /// (`0`, the default, never tries it: self-play matches found the budget
+    /// better spent on the heuristic search, by 14 to 29 Elo).
     pub exact_max_empties: u32,
     /// The exact solver gets `1 / exact_share` of the node budget.
     pub exact_share: u64,
@@ -127,7 +128,7 @@ impl Default for Options {
         Options {
             tt_bits: 18,
             exact_tt_bits: 18,
-            exact_max_empties: 55,
+            exact_max_empties: 0,
             exact_share: 4,
             leaf_wins: true,
             pvs: true,
