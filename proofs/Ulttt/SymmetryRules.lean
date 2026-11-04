@@ -150,4 +150,42 @@ theorem map_legalMoves_perm :
 
 end State
 
+theorem foldl_max_perm {l₁ l₂ : List Int} (h : List.Perm l₁ l₂) (a : Int) :
+    l₁.foldl max a = l₂.foldl max a :=
+  h.foldl_eq' (fun _ _ _ _ _ => by omega) a
+
+theorem foldl_min_perm {l₁ l₂ : List Int} (h : List.Perm l₁ l₂) (a : Int) :
+    l₁.foldl min a = l₂.foldl min a :=
+  h.foldl_eq' (fun _ _ _ _ _ => by omega) a
+
+/-- Unfolding `value` one step, without the membership proofs used for termination. -/
+theorem value_eq (v : Variant) (s : State) : value v s =
+    if s.terminal v then (s.outcome v).score
+    else match s.toMove with
+      | .X => ((s.legalMoves v).map fun m => value v (s.play m)).foldl max (-1)
+      | .O => ((s.legalMoves v).map fun m => value v (s.play m)).foldl min 1 := by
+  have h := List.attach_map_val (l := s.legalMoves v) (f := fun m => value v (s.play m))
+  rw [value, h]
+  rfl
+
+/-- Symmetric positions have the same value. -/
+theorem value_map (v : Variant) (g : Sym) (s : State) : value v (s.map g) = value v s := by
+  rw [value_eq, value_eq v s, State.map_terminal, State.map_outcome, State.map_toMove]
+  split
+  · rfl
+  · have hvals : List.Perm (((s.map g).legalMoves v).map fun m => value v ((s.map g).play m))
+        ((s.legalMoves v).map fun m => value v (s.play m)) := by
+      refine ((State.map_legalMoves_perm v g s).map _).trans (List.Perm.of_eq ?_)
+      rw [List.map_map]
+      apply List.map_congr_left
+      intro m hm
+      simp only [Function.comp, State.map_play]
+      exact value_map v g (s.play m)
+    cases s.toMove
+    · exact foldl_max_perm hvals _
+    · exact foldl_min_perm hvals _
+termination_by s.empties
+decreasing_by
+  exact State.empties_play_lt (State.cells_isNone_of_legal (State.mem_legalMoves.mp hm))
+
 end Ulttt
