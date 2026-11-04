@@ -93,6 +93,8 @@ enum Command {
         /// The run to compare against it.
         b: i64,
     },
+    /// Show what the database holds.
+    Summary,
     /// Show recent benchmark runs.
     Runs {
         /// Only runs of this suite.
@@ -253,6 +255,16 @@ fn main() -> ExitCode {
         Command::Bench(args) => return bench::run(&mut open_db(&cli.db), &args),
         Command::Verify(args) => return verify::verify_suite(&open_db(&cli.db), &args),
         Command::Compare { a, b } => return bench::print_compare(&open_db(&cli.db), a, b),
+        Command::Summary => {
+            let s = open_db(&cli.db).summary().expect("read summary");
+            println!("suites {}  runs {}", s.suites, s.runs);
+            for (v, n) in &s.solved {
+                println!("solved {v:<9} {n}");
+            }
+            for (v, n) in &s.verified {
+                println!("verified {v:<9} {n}  (certificates accepted by Lean)");
+            }
+        }
         Command::Runs { suite, limit } => {
             let db = open_db(&cli.db);
             bench::print_runs(&db, suite.as_deref(), limit);
