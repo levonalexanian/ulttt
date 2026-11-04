@@ -58,6 +58,10 @@ class Engine {
     for (let i = 0; i < flat.length; i += 2) values.set(flat[i], flat[i + 1] as Value);
     return values;
   }
+  /** A line of optimal play; empty if the position could not be solved. */
+  principalVariation(variant: Variant, pos: string, nodeLimit: number) {
+    return this.call<number[]>({ fn: "principalVariation", variant, pos, nodeLimit });
+  }
   bestMove(variant: Variant, pos: string, nodeLimit: number) {
     return this.call<number>({ fn: "bestMove", variant, pos, nodeLimit });
   }

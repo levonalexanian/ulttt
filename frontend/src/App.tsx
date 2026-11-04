@@ -46,6 +46,7 @@ export function App() {
   const [result, setResult] = useState<Result>("");
   const [values, setValues] = useState<Map<number, Value> | null>(null);
   const [posValue, setPosValue] = useState<Value | null>(null);
+  const [line, setLine] = useState<number[]>([]);
   const [thinking, setThinking] = useState(false);
   const [loadText, setLoadText] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -102,6 +103,7 @@ export function App() {
     const gen = generation.current;
     setValues(null);
     setPosValue(null);
+    setLine([]);
     Promise.all([engine.legalMoves(variant, current), engine.result(variant, current)]).then(([l, r]) => {
       if (gen !== generation.current) return;
       setLegal(new Set(l));
@@ -126,7 +128,14 @@ export function App() {
     if (!analysis || result !== "" || solverTurn) return;
     const gen = generation.current;
     engine.solve(variant, current, nodeLimit).then((v) => {
-      if (gen === generation.current) setPosValue(v);
+      if (gen !== generation.current) return;
+      setPosValue(v);
+      // A solved position also gets a line of optimal play.
+      if (v !== 2) {
+        engine.principalVariation(variant, current, nodeLimit).then((line) => {
+          if (gen === generation.current) setLine(line);
+        });
+      }
     });
     engine.analyze(variant, current, nodeLimit).then((vals) => {
       if (gen === generation.current) setValues(vals);
@@ -218,6 +227,14 @@ export function App() {
           {analysis && result === "" ? (
             <div className="analysis">
               <p>{describeValue(posValue)}</p>
+              {line.length ? (
+                <p className="line">
+                  Best line:{" "}
+                  {line
+                    .map((m, i) => `${(pos.toMove === "x") === (i % 2 === 0) ? "×" : "○"}${boardOf(m) + 1}.${cellOf(m) + 1}`)
+                    .join(" ")}
+                </p>
+              ) : null}
               <p className="legend">
                 <span className="dot v-win" /> wins <span className="dot v-draw" /> draws{" "}
                 <span className="dot v-loss" /> loses <span className="dot v-unknown" /> unknown
