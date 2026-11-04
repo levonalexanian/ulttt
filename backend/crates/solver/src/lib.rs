@@ -120,3 +120,56 @@ pub trait Solver {
     /// runs as on a fresh solver, but reuses allocated memory.
     fn reset(&mut self);
 }
+
+/// A line of optimal play from `pos`: at each turn, the first legal move that
+/// keeps the position's value. `None` if a search hit the node limit.
+pub fn principal_variation(
+    solver: &mut dyn Solver,
+    pos: &Position,
+    v: Variant,
+) -> Option<Vec<ulttt_game::Move>> {
+    let value = solver.solve(pos, v)?;
+    let mut line = Vec::new();
+    let mut cur = *pos;
+    while !cur.is_terminal(v) {
+        let mut next = None;
+        for m in ulttt_game::Moves(cur.legal_moves(v)) {
+            if solver.solve(&cur.after(m), v)? == value {
+                next = Some(m);
+                break;
+            }
+        }
+        let m = next.expect("some move keeps the value");
+        line.push(m);
+        cur.play(m);
+    }
+    Some(line)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ulttt_game::random::Rng;
+
+    /// A principal variation is a legal game ending in the solved result.
+    #[test]
+    fn principal_variation_ends_in_the_value() {
+        let mut rng = Rng::new(17);
+        let mut solver = by_name("dfpn").unwrap();
+        for i in 0..30 {
+            let v = Variant::ALL[i % 3];
+            let Some(pos) = rng.position(v, 50) else {
+                continue;
+            };
+            let value = solver.solve(&pos, v).unwrap();
+            let line = principal_variation(solver.as_mut(), &pos, v).unwrap();
+            let mut cur = pos;
+            for &m in &line {
+                assert!(cur.is_legal(v, m));
+                cur.play(m);
+            }
+            let outcome = cur.result(v).expect("the line ends the game");
+            assert_eq!(outcome.score(), value as i8, "{v} {pos}");
+        }
+    }
+}

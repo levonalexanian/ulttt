@@ -59,6 +59,9 @@ enum Command {
         /// Give up after this many positions.
         #[arg(long)]
         node_limit: Option<u64>,
+        /// Also print a line of optimal play.
+        #[arg(long)]
+        pv: bool,
         /// Position in the text notation; the empty board by default.
         position: Option<Position>,
     },
@@ -188,6 +191,7 @@ fn main() -> ExitCode {
             variant,
             solver,
             node_limit,
+            pv,
             position,
         } => {
             let pos = position.unwrap_or_default();
@@ -208,6 +212,21 @@ fn main() -> ExitCode {
                 value.map_or("unknown", |v| v.name()),
                 nodes as f64 / secs.max(1e-9) / 1e6
             );
+            if pv && value.is_some() {
+                let line = ulttt_solver::principal_variation(solver.as_mut(), &pos, variant)
+                    .expect("solved once already");
+                let shown: Vec<String> = line
+                    .iter()
+                    .map(|&m| {
+                        format!(
+                            "{}.{}",
+                            ulttt_game::board_of(m) + 1,
+                            ulttt_game::cell_of(m) + 1
+                        )
+                    })
+                    .collect();
+                println!("pv ({} moves, board.cell): {}", line.len(), shown.join(" "));
+            }
         }
         Command::SuiteCreate {
             name,
