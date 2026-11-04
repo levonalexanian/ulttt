@@ -1,0 +1,8 @@
+name = "ulttt"
+defaultTargets = ["Ulttt"]
+
+[leanOptions]
+autoImplicit = false
+
+[[lean_lib]]
+name = "Ulttt"
