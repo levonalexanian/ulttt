@@ -50,6 +50,16 @@ pub struct RunSummary {
     pub micros: u64,
 }
 
+/// The result of one position in a run.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunResult {
+    pub idx: usize,
+    /// `None` when the node limit was hit.
+    pub value: Option<Value>,
+    pub nodes: u64,
+    pub micros: u64,
+}
+
 pub struct Db {
     conn: Connection,
 }
@@ -227,6 +237,22 @@ impl Db {
                 solved: r.get::<_, i64>(6)? as u64,
                 nodes: r.get::<_, i64>(7)? as u64,
                 micros: r.get::<_, i64>(8)? as u64,
+            })
+        })?
+        .collect()
+    }
+
+    /// Every result of a run, by position index.
+    pub fn run_results(&self, run_id: i64) -> Result<Vec<RunResult>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT idx, value, nodes, micros FROM run_results WHERE run_id = ?1 ORDER BY idx",
+        )?;
+        stmt.query_map(params![run_id], |r| {
+            Ok(RunResult {
+                idx: r.get::<_, i64>(0)? as usize,
+                value: r.get::<_, Option<i64>>(1)?.map(value_from_sql),
+                nodes: r.get::<_, i64>(2)? as u64,
+                micros: r.get::<_, i64>(3)? as u64,
             })
         })?
         .collect()
