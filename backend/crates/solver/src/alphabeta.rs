@@ -4,9 +4,20 @@ use crate::{Solver, Stats, Value};
 
 /// Plain negamax with alpha-beta pruning: the baseline every other solver is
 /// compared against.
-#[derive(Default)]
 pub struct AlphaBeta {
     stats: Stats,
+    node_limit: u64,
+    aborted: bool,
+}
+
+impl Default for AlphaBeta {
+    fn default() -> Self {
+        AlphaBeta {
+            stats: Stats::default(),
+            node_limit: u64::MAX,
+            aborted: false,
+        }
+    }
 }
 
 impl AlphaBeta {
@@ -18,6 +29,10 @@ impl AlphaBeta {
     /// window `(alpha, beta)`.
     fn search(&mut self, pos: &Position, v: Variant, mut alpha: i8, beta: i8) -> i8 {
         self.stats.nodes += 1;
+        if self.stats.nodes > self.node_limit {
+            self.aborted = true;
+            return 0;
+        }
         if let Some(outcome) = pos.result(v) {
             let x = outcome.score();
             return if pos.to_move() == ulttt_game::Player::X {
@@ -29,6 +44,9 @@ impl AlphaBeta {
         let mut best = -1;
         for m in Moves(pos.legal_moves(v)) {
             let score = -self.search(&pos.after(m), v, -beta, -alpha);
+            if self.aborted {
+                return 0;
+            }
             if score > best {
                 best = score;
                 if best > alpha {
@@ -44,9 +62,21 @@ impl AlphaBeta {
 }
 
 impl Solver for AlphaBeta {
-    fn solve(&mut self, pos: &Position, v: Variant) -> Value {
+    fn name(&self) -> String {
+        "alphabeta".into()
+    }
+
+    fn set_node_limit(&mut self, limit: Option<u64>) {
+        self.node_limit = limit.unwrap_or(u64::MAX);
+    }
+
+    fn solve(&mut self, pos: &Position, v: Variant) -> Option<Value> {
+        self.aborted = false;
+        let limit = self.node_limit;
+        self.node_limit = self.stats.nodes.saturating_add(limit);
         let score = self.search(pos, v, -1, 1);
-        Value::from_score(score, pos.to_move())
+        self.node_limit = limit;
+        (!self.aborted).then(|| Value::from_score(score, pos.to_move()))
     }
 
     fn stats(&self) -> Stats {
@@ -65,7 +95,10 @@ mod tests {
         let pos: Position = format!("{}/{}/o/-", "x".repeat(27) + &".".repeat(54), "xxx......")
             .parse()
             .unwrap();
-        assert_eq!(AlphaBeta::new().solve(&pos, Variant::Classic), Value::XWins);
+        assert_eq!(
+            AlphaBeta::new().solve(&pos, Variant::Classic),
+            Some(Value::XWins)
+        );
     }
 
     #[test]
@@ -99,7 +132,7 @@ mod tests {
         let s: String = cells.into_iter().collect();
         let pos: Position = format!("{s}/xx...oo../x/2").parse().unwrap();
         for v in Variant::ALL {
-            assert_eq!(AlphaBeta::new().solve(&pos, v), Value::XWins, "{v}");
+            assert_eq!(AlphaBeta::new().solve(&pos, v), Some(Value::XWins), "{v}");
         }
     }
 }

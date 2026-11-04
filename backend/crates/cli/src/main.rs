@@ -87,7 +87,7 @@ fn main() {
             let pos = position.unwrap_or_default();
             let mut solver = AlphaBeta::new();
             let start = Instant::now();
-            let value = solver.solve(&pos, variant);
+            let value = solver.solve(&pos, variant).expect("no node limit");
             let secs = start.elapsed().as_secs_f64();
             let nodes = solver.stats().nodes;
             println!(
