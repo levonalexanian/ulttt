@@ -12,14 +12,25 @@ pub use dfpn::DfPn;
 pub use search::{Options, Search};
 
 /// Names accepted by [`by_name`].
-pub const SOLVERS: &[&str] = &["alphabeta", "dfpn", "search", "search:<options>"];
+pub const SOLVERS: &[&str] = &[
+    "alphabeta",
+    "dfpn",
+    "dfpn:tt=<bits>",
+    "search",
+    "search:<options>",
+];
 
-/// A fresh solver by name: `alphabeta`, `dfpn`, `search`, or `search:<options>` with
+/// A fresh solver by name: `alphabeta`, `dfpn`, `dfpn:tt=<bits>`, `search`, or `search:<options>` with
 /// options as in [`Options::parse`].
 pub fn by_name(name: &str) -> Option<Box<dyn Solver>> {
     match name.split_once(':') {
         _ if name == "alphabeta" => Some(Box::new(AlphaBeta::new())),
         _ if name == "dfpn" => Some(Box::new(DfPn::new(22))),
+        Some(("dfpn", spec)) => spec
+            .strip_prefix("tt=")
+            .and_then(|b| b.parse::<u32>().ok())
+            .filter(|b| (2..=32).contains(b))
+            .map(|b| Box::new(DfPn::new(b)) as Box<dyn Solver>),
         _ if name == "search" => Some(Box::new(Search::new(Options::default()))),
         Some(("search", spec)) => Options::parse(spec)
             .ok()
