@@ -10,6 +10,7 @@ export type Request =
   | { id: number; fn: "analyze"; variant: string; pos: string; nodeLimit: number }
   | { id: number; fn: "bestMove"; variant: string; pos: string; nodeLimit: number }
   | { id: number; fn: "think"; variant: string; pos: string; ms: number }
+  | { id: number; fn: "scoreMoves"; variant: string; pos: string; nodeLimit: number }
   | { id: number; fn: "principalVariation"; variant: string; pos: string; nodeLimit: number };
 
 export type Response = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: string };
@@ -32,6 +33,8 @@ function run(req: Request): unknown {
       return wasm.bestMove(req.variant, req.pos, req.nodeLimit);
     case "think":
       return Array.from(wasm.think(req.variant, req.pos, req.ms));
+    case "scoreMoves":
+      return Array.from(wasm.scoreMoves(req.variant, req.pos, req.nodeLimit));
     case "principalVariation":
       return Array.from(wasm.principalVariation(req.variant, req.pos, req.nodeLimit));
   }
