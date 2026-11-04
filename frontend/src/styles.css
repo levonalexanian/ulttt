@@ -362,3 +362,9 @@ summary {
 .error {
   color: var(--loss);
 }
+
+.line {
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
