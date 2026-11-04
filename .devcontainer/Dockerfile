@@ -7,7 +7,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends sqlite3 libsqlite3-dev xz-utils curl git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rustup component add rustfmt clippy
+RUN rustup component add rustfmt clippy \
+    && rustup target add wasm32-unknown-unknown \
+    && cargo install wasm-bindgen-cli --version 0.2.130 --locked \
+    && rm -rf /usr/local/cargo/registry
 
 # Node.js (official binary tarball).
 RUN ARCH=$(dpkg --print-architecture | sed 's/amd64/x64/') \
