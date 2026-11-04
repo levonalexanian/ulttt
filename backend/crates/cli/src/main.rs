@@ -1,6 +1,7 @@
 //! `ulttt`: command-line interface to the engine and solver.
 
 mod bench;
+mod play;
 mod verify;
 
 use std::path::PathBuf;
@@ -86,6 +87,13 @@ enum Command {
     /// Certify every position of a suite and check the certificates with Lean,
     /// recording verified values in the database.
     Verify(verify::VerifyArgs),
+    /// Play a match between two playing-engine configurations and record it.
+    Match(play::MatchArgs),
+    /// Show recent engine matches.
+    Matches {
+        #[arg(short = 'n', long, default_value_t = 20)]
+        limit: usize,
+    },
     /// Compare two benchmark runs of the same suite, position by position.
     Compare {
         /// The baseline run.
@@ -254,6 +262,8 @@ fn main() -> ExitCode {
         }
         Command::Bench(args) => return bench::run(&mut open_db(&cli.db), &args),
         Command::Verify(args) => return verify::verify_suite(&open_db(&cli.db), &args),
+        Command::Match(args) => return play::run(&open_db(&cli.db), &args),
+        Command::Matches { limit } => return play::list(&open_db(&cli.db), limit),
         Command::Compare { a, b } => return bench::print_compare(&open_db(&cli.db), a, b),
         Command::Summary => {
             let s = open_db(&cli.db).summary().expect("read summary");

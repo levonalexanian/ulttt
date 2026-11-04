@@ -16,6 +16,7 @@ clap = { version = "4", features = ["derive"] }
 ulttt-game = { path = "../game" }
 ulttt-certificate = { path = "../certificate" }
 ulttt-db = { path = "../db" }
+ulttt-engine = { path = "../engine" }
 ulttt-solver = { path = "../solver" }
 
 [lints]
