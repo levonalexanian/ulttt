@@ -206,6 +206,28 @@ impl Engine {
         })
     }
 
+    /// A score for every legal move, for the player to move, each searched
+    /// with an equal share of about `node_limit` positions: for analysis,
+    /// where every move needs a score and not just the best one. Scores beyond
+    /// `WIN - 1000` in absolute value are forced results.
+    pub fn score_moves(&mut self, pos: &Position, node_limit: u64) -> Vec<(Move, i32)> {
+        let v = self.variant;
+        let legal = pos.legal_moves(v);
+        let share = (node_limit / u64::from(legal.count_ones().max(1))).max(1);
+        Moves(legal)
+            .map(|m| {
+                let child = pos.after(m);
+                let score = match child.result(v) {
+                    Some(Outcome::Win(p)) if p == pos.to_move() => WIN - 1,
+                    Some(Outcome::Win(_)) => -(WIN - 1),
+                    Some(Outcome::Draw) => 0,
+                    None => -self.search_root(&child, child.legal_moves(v), share).1,
+                };
+                (m, score)
+            })
+            .collect()
+    }
+
     /// Iterative deepening over the root moves in `candidates`.
     fn search_root(&mut self, pos: &Position, candidates: u128, limit: u64) -> (Move, i32, u32) {
         self.nodes = 0;
@@ -716,5 +738,24 @@ mod tests {
             }
             tested += 1;
         }
+    }
+
+    #[test]
+    fn scores_every_move() {
+        // X can win at once with 20; every other move scores lower.
+        let p = pos(
+            &[0, 1, 2, 9, 10, 11, 18, 19],
+            &[45, 46, 47, 54, 55, 56, 63, 64],
+            "xx...oo../x/2",
+        );
+        let mut e = Engine::new(Variant::Classic, small(12));
+        let scores = e.score_moves(&p, 50_000);
+        assert_eq!(
+            scores.len() as u32,
+            p.legal_moves(Variant::Classic).count_ones()
+        );
+        let best = scores.iter().max_by_key(|s| s.1).unwrap();
+        assert_eq!(best.0, 20);
+        assert!(best.1 >= WIN_THRESHOLD);
     }
 }
