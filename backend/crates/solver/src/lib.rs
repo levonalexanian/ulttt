@@ -15,7 +15,7 @@ pub use search::{Options, Search};
 pub const SOLVERS: &[&str] = &[
     "alphabeta",
     "dfpn",
-    "dfpn:tt=<bits>,sym=<empties>,ttmin=<empties>",
+    "dfpn:tt=<bits>,sym=<empties>,ttmin=<empties>,progress=1",
     "search",
     "search:<options>",
 ];
@@ -25,10 +25,12 @@ const DFPN_TT_BITS: u32 = 22;
 const DFPN_SYM_MIN_EMPTIES: u32 = 60;
 const DFPN_TT_MIN_EMPTIES: u32 = 8;
 
-/// Parses df-pn options `tt=<bits>`, `sym=<empties>` and `ttmin=<empties>`,
+/// Parses df-pn options `tt=<bits>`, `sym=<empties>`, `ttmin=<empties>` and
+/// `progress=1` (print the root's progress to stderr),
 /// comma separated.
 fn dfpn_from_spec(spec: &str) -> Option<DfPn> {
     let (mut tt, mut sym, mut ttmin) = (DFPN_TT_BITS, DFPN_SYM_MIN_EMPTIES, DFPN_TT_MIN_EMPTIES);
+    let mut progress = false;
     for part in spec.split(',').filter(|p| !p.is_empty()) {
         let (key, value) = part.split_once('=')?;
         let n: u32 = value.parse().ok()?;
@@ -36,10 +38,15 @@ fn dfpn_from_spec(spec: &str) -> Option<DfPn> {
             "tt" if (2..=32).contains(&n) => tt = n,
             "sym" => sym = n,
             "ttmin" => ttmin = n,
+            "progress" if n <= 1 => progress = n == 1,
             _ => return None,
         }
     }
-    Some(DfPn::new(tt, sym).with_tt_min_empties(ttmin))
+    Some(
+        DfPn::new(tt, sym)
+            .with_tt_min_empties(ttmin)
+            .with_progress(progress),
+    )
 }
 
 /// A fresh solver by name: `alphabeta`, `dfpn`, `dfpn:<options>`, `search`, or

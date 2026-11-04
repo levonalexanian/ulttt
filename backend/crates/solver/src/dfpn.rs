@@ -112,6 +112,8 @@ pub struct DfPn {
     aborted: bool,
     /// Child buffers for `mid`, reused between calls.
     spare: Vec<Vec<(Position, u32, u32)>>,
+    /// Whether to print the root's progress to stderr.
+    progress: bool,
 }
 
 impl DfPn {
@@ -127,6 +129,7 @@ impl DfPn {
             limit_now: u64::MAX,
             aborted: false,
             spare: Vec::new(),
+            progress: false,
         }
     }
 
@@ -272,6 +275,7 @@ impl DfPn {
     fn prove(&mut self, q: &Question, pos: &Position) -> Option<bool> {
         let (phi, _) = match self.evaluate(q, pos) {
             Some(pd) => pd,
+            None if self.progress => self.prove_with_progress(q, pos),
             None => self.mid(q, pos, INF - 1, INF - 1),
         };
         if self.aborted {
@@ -280,6 +284,33 @@ impl DfPn {
         let mover_is_attacker = pos.to_move() == q.attacker;
         // phi == 0: the mover reaches their goal.
         Some((phi == 0) == mover_is_attacker)
+    }
+
+    /// Searches the root under doubling thresholds, printing its numbers to
+    /// stderr after each round, until it is proved or disproved.
+    fn prove_with_progress(&mut self, q: &Question, pos: &Position) -> (u32, u32) {
+        let start = std::time::Instant::now();
+        let mut th = 2u32;
+        loop {
+            let (phi, delta) = self.mid(q, pos, th.min(INF - 1), th.min(INF - 1));
+            eprintln!(
+                "  attacker {} goal {}: phi {phi} delta {delta}  nodes {}  {:.0}s",
+                q.attacker.symbol(),
+                q.goal,
+                self.stats.nodes,
+                start.elapsed().as_secs_f64()
+            );
+            if self.aborted || phi == 0 || delta == 0 || phi >= INF - 1 || delta >= INF - 1 {
+                return (phi, delta);
+            }
+            th = th.saturating_mul(2);
+        }
+    }
+
+    /// Prints the root's progress to stderr during long searches.
+    pub fn with_progress(mut self, on: bool) -> DfPn {
+        self.progress = on;
+        self
     }
 }
 
