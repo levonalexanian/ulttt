@@ -55,6 +55,8 @@ pub struct Engine {
     variant: Variant,
     table: Vec<Entry>,
     history: [[i32; 81]; 2],
+    /// Two moves per ply that recently caused a cutoff there.
+    killers: [[u8; 2]; 82],
     nodes: u64,
     limit: u64,
     aborted: bool,
@@ -70,6 +72,7 @@ impl Engine {
             variant,
             table: vec![Entry::default(); 1 << opts.tt_bits],
             history: [[0; 81]; 2],
+            killers: [[NO_MOVE; 2]; 82],
             nodes: 0,
             limit: 0,
             aborted: false,
@@ -188,7 +191,10 @@ impl Engine {
         for h in self.history.iter_mut().flatten() {
             *h /= 8;
         }
-        let mut moves: Vec<Move> = self.ordered(pos, candidates, NO_MOVE).as_slice().to_vec();
+        let mut moves: Vec<Move> = self
+            .ordered(pos, candidates, NO_MOVE, 0)
+            .as_slice()
+            .to_vec();
         let mut best = (moves[0], 0, 0);
         if moves.len() == 1 {
             // Still worth a score for the caller; a shallow search is enough.
@@ -232,7 +238,12 @@ impl Engine {
 
     /// `candidates` in the order to search them: the table's move, then local
     /// wins and blocks, avoiding sending the opponent where they want to go.
-    fn ordered(&self, pos: &Position, candidates: u128, tt_move: u8) -> MoveList {
+    fn ordered(&self, pos: &Position, candidates: u128, tt_move: u8, ply: usize) -> MoveList {
+        let killers = if self.opts.killers {
+            self.killers[ply.min(81)]
+        } else {
+            [NO_MOVE; 2]
+        };
         let v = self.variant;
         let me = pos.to_move();
         let closed = pos.closed(v);
@@ -254,6 +265,8 @@ impl Engine {
             let mut s = history[m as usize];
             if m == tt_move {
                 s += 1 << 30;
+            } else if m == killers[0] || m == killers[1] {
+                s += 1 << 20;
             }
             let wins_board = mine[b] >> c & 1 != 0;
             if wins_board {
@@ -402,7 +415,7 @@ impl Engine {
         let original_alpha = alpha;
         let mut best = -WIN - 1;
         let mut best_move = NO_MOVE;
-        let list = self.ordered(pos, pos.legal_moves(v), tt_move);
+        let list = self.ordered(pos, pos.legal_moves(v), tt_move, ply as usize);
         for (i, &m) in list.as_slice().iter().enumerate() {
             let child = pos.after(m);
             let s = if i == 0 || !self.opts.pvs {
@@ -429,6 +442,11 @@ impl Engine {
             }
             if alpha >= beta {
                 self.history[me.index()][m as usize] += (depth * depth) as i32;
+                let k = &mut self.killers[(ply as usize).min(81)];
+                if k[0] != m {
+                    k[1] = k[0];
+                    k[0] = m;
+                }
                 break;
             }
         }
