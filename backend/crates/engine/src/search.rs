@@ -232,18 +232,29 @@ impl Engine {
                 (-WIN - 1, WIN + 1)
             };
             let mut iteration_best;
+            // Whether the first move's score is exact (inside the window), so
+            // a later move beating it really is better.
+            let mut first_exact;
             loop {
                 let (mut alpha, beta) = bounds;
                 iteration_best = None;
+                first_exact = false;
                 for (i, &m) in moves.iter().enumerate() {
                     let child = pos.after(m);
                     let s = -self.negamax(&child, depth - 1, -beta, -alpha, 1);
                     if self.aborted {
                         break;
                     }
+                    if i == 0 {
+                        first_exact = s > bounds.0 && s < bounds.1;
+                    }
                     if i == 0 || s > alpha {
                         alpha = s;
                         iteration_best = Some((m, s));
+                    }
+                    if s >= beta {
+                        // Failed high: re-search with the full window.
+                        break;
                     }
                 }
                 let failed = iteration_best.is_some_and(|(_, s)| s <= bounds.0 || s >= bounds.1);
@@ -257,6 +268,7 @@ impl Engine {
                 // searched fully and beat the previous best, searched first.
                 if let Some((m, s)) = iteration_best
                     && m != best.0
+                    && first_exact
                 {
                     best = (m, s, best.2);
                 }
