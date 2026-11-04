@@ -4,13 +4,10 @@ use ulttt_game::{Move, Moves, Outcome, Player, Position, Variant, board_of, cell
 use ulttt_solver::{Options as ExactOptions, Search, Solver, Value};
 
 use crate::eval::{WIN, evaluate};
+use crate::options::Options;
 
 /// Scores this close to [`WIN`] are forced results found by the search.
 const WIN_THRESHOLD: i32 = WIN - 1000;
-
-/// Only try the exact solver with at most this many empty cells; before that
-/// it cannot finish anyway.
-const EXACT_MAX_EMPTIES: u32 = 55;
 
 /// The move an engine picked and what it knows about it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,24 +47,28 @@ pub struct Engine {
     limit: u64,
     aborted: bool,
     exact: Search,
+    opts: Options,
 }
 
 impl Engine {
-    /// An engine with a heuristic table of `2^tt_bits` entries and an exact
-    /// solver table of `2^exact_tt_bits` entries.
-    pub fn new(variant: Variant, tt_bits: u32, exact_tt_bits: u32) -> Engine {
+    pub fn new(variant: Variant, opts: Options) -> Engine {
         Engine {
             variant,
-            table: vec![Entry::default(); 1 << tt_bits],
+            table: vec![Entry::default(); 1 << opts.tt_bits],
             history: [[0; 81]; 2],
             nodes: 0,
             limit: 0,
             aborted: false,
             exact: Search::new(ExactOptions {
-                tt_bits: exact_tt_bits,
+                tt_bits: opts.exact_tt_bits,
                 ..ExactOptions::default()
             }),
+            opts,
         }
+    }
+
+    pub fn options(&self) -> &Options {
+        &self.opts
     }
 
     pub fn variant(&self) -> Variant {
@@ -86,17 +87,24 @@ impl Engine {
         let mut candidates = legal;
         let mut value = None;
         let mut exact_nodes = 0;
-        if pos.empties() <= EXACT_MAX_EMPTIES {
+        if pos.empties() <= self.opts.exact_max_empties {
             let before = self.exact.stats().nodes;
-            self.exact.set_node_limit(Some(node_limit / 4));
+            let share = node_limit / self.opts.exact_share;
+            self.exact.set_node_limit(Some(share));
             value = self.exact.solve(pos, v);
             if let Some(val) = value {
                 let target = for_player(val, me);
                 if target >= 0 {
                     // Keep only the moves that keep the value. Their solves are
-                    // cheap now that the table holds the root's proof.
+                    // usually cheap now that the table holds the root's proof;
+                    // all of them together get the same share again.
                     let mut keep = 0;
                     for m in Moves(legal) {
+                        let used = self.exact.stats().nodes - before;
+                        let Some(left) = (2 * share).checked_sub(used).filter(|&n| n > 0) else {
+                            break;
+                        };
+                        self.exact.set_node_limit(Some(left));
                         if self
                             .exact
                             .solve(&pos.after(m), v)
@@ -242,7 +250,7 @@ impl Engine {
             return 0;
         }
         if depth == 0 {
-            return evaluate(pos, v);
+            return evaluate(pos, v, &self.opts.weights);
         }
         let key = pos.hash64();
         let slot = (key as usize) & (self.table.len() - 1);
@@ -333,6 +341,14 @@ mod tests {
     use super::*;
     use ulttt_game::random::Rng;
 
+    fn small(bits: u32) -> Options {
+        Options {
+            tt_bits: bits,
+            exact_tt_bits: bits,
+            ..Options::default()
+        }
+    }
+
     fn pos(x: &[usize], o: &[usize], rest: &str) -> Position {
         let mut cells = ['.'; 81];
         for &m in x {
@@ -353,7 +369,7 @@ mod tests {
             &[45, 46, 47, 54, 55, 56, 63, 64],
             "xx...oo../x/2",
         );
-        let mut e = Engine::new(Variant::Classic, 12, 12);
+        let mut e = Engine::new(Variant::Classic, small(12));
         let c = e.best_move(&p, 20_000).unwrap();
         assert_eq!(c.mv, 20);
         assert!(c.score >= WIN_THRESHOLD);
@@ -367,7 +383,7 @@ mod tests {
             &[45, 46, 47, 54, 55, 56, 63, 64],
             "xx...oo../x/2",
         );
-        let mut e = Engine::new(Variant::Classic, 12, 12);
+        let mut e = Engine::new(Variant::Classic, small(12));
         let (m, s, _) = e.search_root(&p, p.legal_moves(Variant::Classic), 20_000);
         assert_eq!(m, 20);
         assert!(s >= WIN_THRESHOLD);
@@ -376,7 +392,7 @@ mod tests {
     /// Plays a game between the engine (as `engine_side`) and random moves.
     fn game_vs_random(v: Variant, engine_side: Player, seed: u64, nodes: u64) -> Option<Outcome> {
         let mut rng = Rng::new(seed);
-        let mut e = Engine::new(v, 14, 14);
+        let mut e = Engine::new(v, small(14));
         let mut p = Position::new();
         while !p.is_terminal(v) {
             let m = if p.to_move() == engine_side {
@@ -417,7 +433,13 @@ mod tests {
                 continue;
             };
             let value = solver.solve(&p, v).unwrap();
-            let mut e = Engine::new(v, 14, 16);
+            let mut e = Engine::new(
+                v,
+                Options {
+                    exact_tt_bits: 16,
+                    ..small(14)
+                },
+            );
             let c = e.best_move(&p, 2_000_000).unwrap();
             assert_eq!(c.value, Some(value));
             let after = solver.solve(&p.after(c.mv), v).unwrap();

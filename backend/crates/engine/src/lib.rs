@@ -9,7 +9,9 @@
 //! away a proven win or draw.
 
 mod eval;
+mod options;
 mod search;
 
 pub use eval::{MAX_EVAL, WIN, evaluate};
+pub use options::{Options, Weights};
 pub use search::{Choice, Engine};
