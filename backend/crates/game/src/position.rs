@@ -119,6 +119,24 @@ impl Position {
         )
     }
 
+    /// A 64-bit hash of the position, for transposition tables. The player to
+    /// move is implied by the cells, so it is not mixed in separately.
+    #[inline]
+    pub fn hash64(&self) -> u64 {
+        #[inline]
+        fn mix(x: u64) -> u64 {
+            let x = (x ^ (x >> 32)).wrapping_mul(0xD6E8_FEB8_6659_FD93);
+            let x = (x ^ (x >> 32)).wrapping_mul(0xD6E8_FEB8_6659_FD93);
+            x ^ (x >> 32)
+        }
+        let meta = self.owner[0] as u64 | (self.owner[1] as u64) << 16 | (self.sent as u64) << 32;
+        let mut h = mix(meta ^ 0x9E37_79B9_7F4A_7C15);
+        h = mix(h ^ self.cells[0] as u64);
+        h = mix(h ^ (self.cells[0] >> 64) as u64);
+        h = mix(h ^ self.cells[1] as u64);
+        mix(h ^ (self.cells[1] >> 64) as u64)
+    }
+
     #[inline]
     pub fn to_move(&self) -> Player {
         self.to_move
