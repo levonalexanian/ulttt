@@ -71,6 +71,10 @@ only when a self-play match (`ulttt match`, recorded in the database) shows
 they help: each opening (4 random moves) is played twice with colors swapped,
 at 20k nodes per move. The margins are 95% intervals.
 
+Altogether, against the engine as it was before this tuning (no quiescence,
+untuned weights, exact solver at the root): +83 ±19 Elo in classic, +42 ±22
+in open and +105 ±23 in majority (800 games each).
+
 | Change | Result |
 | --- | --- |
 | Quiescence search over board-winning moves (6 plies) | +38 ±18 Elo (classic, 800 games), +65 ±22 (majority) |
