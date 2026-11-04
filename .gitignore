@@ -1,0 +1,18 @@
+# Rust
+/backend/target/
+# Lean
+/proofs/.lake/
+# Frontend
+/frontend/node_modules/
+/frontend/dist/
+# Local search artifacts and databases
+/data/*
+!/data/.gitkeep
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+# Editors / OS
+.DS_Store
+.idea/
+*.swp
