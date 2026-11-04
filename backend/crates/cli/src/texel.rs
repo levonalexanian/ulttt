@@ -71,32 +71,45 @@ fn evals(w: &Weights, v: Variant, data: &[Sample]) -> Vec<f32> {
         .collect()
 }
 
-fn mse(evals: &[f32], data: &[Sample], k: f32) -> f64 {
+/// The mean squared error of predicting results by `σ(k (eval + bias))`. The
+/// bias stands for what the evaluation cannot see, such as X's first-move
+/// advantage; it does not change how the engine plays.
+fn mse(evals: &[f32], data: &[Sample], k: f32, bias: f32) -> f64 {
     let sum: f64 = evals
         .iter()
         .zip(data)
         .map(|(&e, s)| {
-            let p = 1.0 / (1.0 + (-k * e).exp());
+            let p = 1.0 / (1.0 + (-k * (e + bias)).exp());
             f64::from((s.result - p).powi(2))
         })
         .sum();
     sum / data.len() as f64
 }
 
-/// The logistic scale that best fits the evaluations, by golden-section
-/// search on a log scale.
-fn fit_k(evals: &[f32], data: &[Sample]) -> f32 {
-    let (mut lo, mut hi) = (-12.0f32, 0.0f32);
+/// The minimum of `f` on `lo..hi`, by golden-section search.
+fn golden(mut lo: f32, mut hi: f32, f: impl Fn(f32) -> f64) -> f32 {
     for _ in 0..40 {
         let a = lo + (hi - lo) * 0.382;
         let b = lo + (hi - lo) * 0.618;
-        if mse(evals, data, a.exp()) < mse(evals, data, b.exp()) {
+        if f(a) < f(b) {
             hi = b;
         } else {
             lo = a;
         }
     }
-    ((lo + hi) / 2.0).exp()
+    (lo + hi) / 2.0
+}
+
+/// The error with the best bias.
+fn fit_error(evals: &[f32], data: &[Sample], k: f32) -> f64 {
+    let bias = golden(-20_000.0, 20_000.0, |b| mse(evals, data, k, b));
+    mse(evals, data, k, bias)
+}
+
+/// The logistic scale that best fits the evaluations (searched on a log
+/// scale), with the bias that best fits it.
+fn fit_k(evals: &[f32], data: &[Sample]) -> f32 {
+    golden(-12.0, 0.0, |lk| fit_error(evals, data, lk.exp())).exp()
 }
 
 type Field = (&'static str, fn(&mut Weights) -> &mut f32);
@@ -143,7 +156,7 @@ pub fn run(db: &Db, args: &TexelArgs) -> ExitCode {
     // The logistic scale is fitted once to the starting weights; after that
     // the weights themselves carry the scale.
     let k = fit_k(&evals(&w, v, &data), &data);
-    let mut best = mse(&evals(&w, v, &data), &data, k);
+    let mut best = fit_error(&evals(&w, v, &data), &data, k);
     println!("{} positions, k = {k:.3e}, start mse {best:.6}", data.len());
     let mut step = 0.2f32;
     for round in 1..=args.rounds {
@@ -157,7 +170,7 @@ pub fn run(db: &Db, args: &TexelArgs) -> ExitCode {
             for dir in [1.0 + step, 1.0 / (1.0 + step)] {
                 let mut cand = w;
                 *field(&mut cand) *= dir;
-                let e = mse(&evals(&cand, v, &data), &data, k);
+                let e = fit_error(&evals(&cand, v, &data), &data, k);
                 if e < best {
                     best = e;
                     w = cand;
