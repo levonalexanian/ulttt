@@ -209,6 +209,46 @@ fn print_summary(m: &MatchSummary) {
     );
 }
 
+/// Runs the engine once on each of `count` positions per game phase, with a
+/// fresh engine each time, and prints positions per second and a checksum of
+/// the chosen moves.
+pub fn bench(spec: &str, v: Variant, nodes: u64, count: usize) -> ExitCode {
+    if let Err(e) = ulttt_engine::agent(v, spec) {
+        eprintln!("{e}");
+        return ExitCode::FAILURE;
+    }
+    let mut rng = Rng::new(7);
+    let mut checksum = 0u64;
+    let (mut total_nodes, mut total_secs) = (0u64, 0f64);
+    for plies in [6, 20, 34] {
+        let mut done = 0;
+        let (mut n, mut secs) = (0u64, 0f64);
+        while done < count {
+            let Some(pos) = rng.position(v, plies) else {
+                continue;
+            };
+            let mut agent = ulttt_engine::agent(v, spec).expect("checked");
+            let t = Instant::now();
+            let c = agent.best_move(&pos, nodes).expect("not over");
+            secs += t.elapsed().as_secs_f64();
+            n += c.nodes;
+            checksum = checksum.wrapping_mul(31).wrapping_add(u64::from(c.mv) + 1);
+            done += 1;
+        }
+        println!(
+            "after {plies:>2} moves: {:>6.0}k positions/s ({n} positions, {secs:.2}s)",
+            n as f64 / secs / 1000.0
+        );
+        total_nodes += n;
+        total_secs += secs;
+    }
+    println!(
+        "total: {:.0}k positions/s, move checksum {checksum:016x}",
+        total_nodes as f64 / total_secs / 1000.0
+    );
+    ExitCode::SUCCESS
+}
+
 /// Prints the most recent matches.
 pub fn list(db: &Db, limit: usize) -> ExitCode {
     for m in db.match_summaries(limit).expect("read matches") {
