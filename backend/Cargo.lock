@@ -347,6 +347,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ulttt-engine"
+version = "0.1.0"
+dependencies = [
+ "ulttt-game",
+ "ulttt-solver",
+]
+
+[[package]]
 name = "ulttt-game"
 version = "0.1.0"
 
