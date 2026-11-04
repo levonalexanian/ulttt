@@ -134,6 +134,20 @@ pub fn best_move(variant_name: &str, pos: &str, node_limit: u32) -> Result<i32, 
         .map_or(-1, |mv| mv[0]))
 }
 
+/// A line of optimal play from the position, or an empty list if it could not
+/// be solved within `node_limit` positions per search.
+#[wasm_bindgen(js_name = principalVariation)]
+pub fn principal_variation(
+    variant_name: &str,
+    pos: &str,
+    node_limit: u32,
+) -> Result<Vec<u8>, JsError> {
+    let (v, pos) = (variant(variant_name)?, position(pos)?);
+    Ok(with_solver(v, node_limit as u64, |s| {
+        ulttt_solver::principal_variation(s, &pos, v).unwrap_or_default()
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
