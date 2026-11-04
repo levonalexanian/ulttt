@@ -11,6 +11,9 @@ on:
       - "proofs/**"
       - "backend/crates/game/**"
       - "backend/crates/difftest/**"
+      - "backend/crates/solver/**"
+      - "backend/crates/certificate/**"
+      - "scripts/check-certificates.sh"
       - ".github/workflows/difftest.yml"
 
 env:
@@ -33,3 +36,7 @@ jobs:
       - name: Fresh seed
         working-directory: backend
         run: cargo run --release -p ulttt-difftest -- ../proofs/.lake/build/bin/ulttt-ref 3000 ${{ github.run_id }}
+      - name: Certificates checked by Lean
+        run: |
+          cargo build --release --manifest-path backend/Cargo.toml -p ulttt-cli
+          scripts/check-certificates.sh 5 ${{ github.run_id }}
