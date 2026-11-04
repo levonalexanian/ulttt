@@ -15,22 +15,37 @@ pub use search::{Options, Search};
 pub const SOLVERS: &[&str] = &[
     "alphabeta",
     "dfpn",
-    "dfpn:tt=<bits>",
+    "dfpn:tt=<bits>,sym=<empties>",
     "search",
     "search:<options>",
 ];
 
-/// A fresh solver by name: `alphabeta`, `dfpn`, `dfpn:tt=<bits>`, `search`, or `search:<options>` with
-/// options as in [`Options::parse`].
+/// Default df-pn table size (2^22 entries) and symmetry threshold.
+const DFPN_TT_BITS: u32 = 22;
+const DFPN_SYM_MIN_EMPTIES: u32 = 60;
+
+/// Parses df-pn options `tt=<bits>` and `sym=<empties>`, comma separated.
+fn dfpn_from_spec(spec: &str) -> Option<DfPn> {
+    let (mut tt, mut sym) = (DFPN_TT_BITS, DFPN_SYM_MIN_EMPTIES);
+    for part in spec.split(',').filter(|p| !p.is_empty()) {
+        let (key, value) = part.split_once('=')?;
+        let n: u32 = value.parse().ok()?;
+        match key {
+            "tt" if (2..=32).contains(&n) => tt = n,
+            "sym" => sym = n,
+            _ => return None,
+        }
+    }
+    Some(DfPn::new(tt, sym))
+}
+
+/// A fresh solver by name: `alphabeta`, `dfpn`, `dfpn:<options>`, `search`, or
+/// `search:<options>` with options as in [`Options::parse`].
 pub fn by_name(name: &str) -> Option<Box<dyn Solver>> {
     match name.split_once(':') {
         _ if name == "alphabeta" => Some(Box::new(AlphaBeta::new())),
-        _ if name == "dfpn" => Some(Box::new(DfPn::new(22))),
-        Some(("dfpn", spec)) => spec
-            .strip_prefix("tt=")
-            .and_then(|b| b.parse::<u32>().ok())
-            .filter(|b| (2..=32).contains(b))
-            .map(|b| Box::new(DfPn::new(b)) as Box<dyn Solver>),
+        _ if name == "dfpn" => dfpn_from_spec("").map(|s| Box::new(s) as Box<dyn Solver>),
+        Some(("dfpn", spec)) => dfpn_from_spec(spec).map(|s| Box::new(s) as Box<dyn Solver>),
         _ if name == "search" => Some(Box::new(Search::new(Options::default()))),
         Some(("search", spec)) => Options::parse(spec)
             .ok()
