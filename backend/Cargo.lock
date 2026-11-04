@@ -369,6 +369,7 @@ dependencies = [
 name = "ulttt-wasm"
 version = "0.1.0"
 dependencies = [
+ "ulttt-engine",
  "ulttt-game",
  "ulttt-solver",
  "wasm-bindgen",
