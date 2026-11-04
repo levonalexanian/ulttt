@@ -7,7 +7,7 @@ Work in progress.
 
 ## Layout
 
-- `docs/` — rules spec (`RULES.md`) and design notes
+- `RULES.md` — the three supported rule variants
 - `backend/` — Rust workspace
 - `proofs/` — Lean 4 formalization
 - `frontend/` — React + TypeScript UI
