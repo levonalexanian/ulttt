@@ -80,7 +80,25 @@ fn strategy(
     }
     let legal = Moves(pos.legal_moves(v));
     if pos.to_move() == p {
-        for m in legal {
+        // Try first the moves likely to need the smallest certificate: those
+        // that end the game, then those that need no further moves (the
+        // opponent can no longer win), then those leaving the opponent the
+        // fewest replies. Any move that keeps the value would be correct.
+        let mut candidates: Vec<(u32, Move)> = legal
+            .map(|m| {
+                let child = pos.after(m);
+                let cost = if child.is_terminal(v) {
+                    0
+                } else if r <= 0 && !child.may_win(v, p.other()) {
+                    1
+                } else {
+                    2 + child.legal_moves(v).count_ones()
+                };
+                (cost, m)
+            })
+            .collect();
+        candidates.sort_unstable();
+        for (_, m) in candidates {
             let child = pos.after(m);
             match solver.solve(&child, v) {
                 Some(value) if value_for(value, p) >= r => {
