@@ -116,6 +116,9 @@ pub struct Options {
     /// Half-width of the root's aspiration window from depth 4 (`0` turns
     /// it off).
     pub aspiration: u32,
+    /// Quiescence: lower the stand-pat score by this much when every move
+    /// gives the opponent a board to take or a free choice (`0` turns it off).
+    pub unsafe_penalty: u32,
     pub weights: Weights,
 }
 
@@ -133,6 +136,7 @@ impl Default for Options {
             tt_buckets: false,
             lmr: 0,
             aspiration: 0,
+            unsafe_penalty: 0,
             weights: Weights::default(),
         }
     }
@@ -177,6 +181,7 @@ impl Options {
                 "tt" => o.tt_bits = int()?.clamp(4, 30),
                 "xtt" => o.exact_tt_bits = int()?.clamp(4, 30),
                 "xmax" => o.exact_max_empties = int()?,
+                "qsafe" => o.unsafe_penalty = int()?,
                 "asp" => o.aspiration = int()?,
                 "lmr" => o.lmr = int()?,
                 "tt2" => o.tt_buckets = int()? != 0,
