@@ -60,6 +60,17 @@ pub struct RunResult {
     pub micros: u64,
 }
 
+/// What the database holds; see [`Db::summary`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Summary {
+    pub suites: u64,
+    pub runs: u64,
+    /// Solved positions per variant.
+    pub solved: Vec<(String, u64)>,
+    /// Lean-verified positions per variant.
+    pub verified: Vec<(String, u64)>,
+}
+
 pub struct Db {
     conn: Connection,
 }
@@ -330,6 +341,27 @@ impl Db {
             .map(|v| v.map(value_from_sql))
     }
 
+    /// Counts of what the database holds: suites, runs, then solved positions
+    /// and Lean-verified positions per variant.
+    pub fn summary(&self) -> Result<Summary> {
+        let count = |sql: &str| -> Result<u64> {
+            self.conn
+                .query_row(sql, [], |r| r.get::<_, i64>(0).map(|n| n as u64))
+        };
+        let mut stmt = self
+            .conn
+            .prepare("SELECT variant, COUNT(*) FROM solved GROUP BY variant ORDER BY variant")?;
+        let solved = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as u64)))?
+            .collect::<Result<_>>()?;
+        Ok(Summary {
+            suites: count("SELECT COUNT(*) FROM suites")?,
+            runs: count("SELECT COUNT(*) FROM runs")?,
+            solved,
+            verified: self.verified_counts()?,
+        })
+    }
+
     /// Number of verified positions per variant.
     pub fn verified_counts(&self) -> Result<Vec<(String, u64)>> {
         let mut stmt = self
@@ -411,5 +443,8 @@ mod tests {
             Some(Value::Draw)
         );
         assert_eq!(db.verified_counts().unwrap(), [("open".to_string(), 1)]);
+        let summary = db.summary().unwrap();
+        assert_eq!((summary.suites, summary.runs), (1, 1));
+        assert_eq!(summary.solved, [("open".to_string(), 1)]);
     }
 }
