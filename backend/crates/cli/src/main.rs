@@ -79,6 +79,13 @@ enum Command {
     Suites,
     /// Run a solver over a suite and record the results.
     Bench(bench::BenchArgs),
+    /// Compare two benchmark runs of the same suite, position by position.
+    Compare {
+        /// The baseline run.
+        a: i64,
+        /// The run to compare against it.
+        b: i64,
+    },
     /// Show recent benchmark runs.
     Runs {
         /// Only runs of this suite.
@@ -236,6 +243,7 @@ fn main() -> ExitCode {
             }
         }
         Command::Bench(args) => return bench::run(&mut open_db(&cli.db), &args),
+        Command::Compare { a, b } => return bench::print_compare(&open_db(&cli.db), a, b),
         Command::Runs { suite, limit } => {
             let db = open_db(&cli.db);
             bench::print_runs(&db, suite.as_deref(), limit);
