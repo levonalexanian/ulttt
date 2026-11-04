@@ -3,7 +3,7 @@
 //! 1. Rules: plays random games with the Rust engine and checks Lean agrees on
 //!    every position: the legal moves, the board owners, the result, and
 //!    whether each player may still win (`may_win`, proved sound in Lean).
-//! 2. Values: picks random endgame positions and checks the Rust solver's value
+//! 2. Values: picks random endgame positions and checks every Rust solver's value
 //!    equals `Ulttt.value`, the minimax value defined in Lean.
 //!
 //! Usage: `ulttt-difftest <path to ulttt-ref> [games] [seed]`
@@ -14,7 +14,7 @@ use std::thread;
 
 use ulttt_game::random::Rng;
 use ulttt_game::{Move, Moves, Outcome, Player, Position, Variant};
-use ulttt_solver::{AlphaBeta, Solver};
+use ulttt_solver::Solver;
 
 /// The description of a position in the reference executable's output format.
 fn describe(v: Variant, pos: &Position) -> String {
@@ -173,20 +173,28 @@ fn check_values(reference: &str, count: usize, rng: &mut Rng) -> bool {
         .map(|(v, moves)| format!("value {v} {}\n", move_list(moves)))
         .collect();
     let mut lean = Reference::start(reference, input);
+    // Every solver, each kept across positions as in real use.
+    let mut solvers: Vec<Box<dyn Solver>> = ["alphabeta", "search", "search:threads=2", "dfpn"]
+        .iter()
+        .map(|name| ulttt_solver::by_name(name).expect("known solver"))
+        .collect();
     for (v, moves) in &cases {
-        let want = AlphaBeta::new()
-            .solve(&play_all(moves), *v)
-            .expect("no node limit") as i8;
         let got = lean.next_line();
-        if got != want.to_string() {
-            eprintln!("VALUE MISMATCH ({v}) after {:?}", moves);
-            eprintln!("  rust: {want}");
-            eprintln!("  lean: {got}");
-            return false;
+        for solver in &mut solvers {
+            let want = solver.solve(&play_all(moves), *v).expect("no node limit") as i8;
+            if got != want.to_string() {
+                eprintln!("VALUE MISMATCH ({v}, {}) after {:?}", solver.name(), moves);
+                eprintln!("  rust: {want}");
+                eprintln!("  lean: {got}");
+                return false;
+            }
         }
     }
     lean.finish();
-    println!("values ok: {count} endgames agree");
+    println!(
+        "values ok: {count} endgames agree for {} solvers",
+        solvers.len()
+    );
     true
 }
 
