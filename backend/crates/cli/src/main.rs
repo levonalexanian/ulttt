@@ -1,5 +1,6 @@
 //! `ulttt`: command-line interface to the engine and solver.
 
+mod accuracy;
 mod bench;
 mod play;
 mod texel;
@@ -104,6 +105,9 @@ enum Command {
         #[arg(short = 'n', long, default_value_t = 10)]
         count: usize,
     },
+    /// Check how often the engine's move keeps the known value of suite
+    /// positions.
+    EngineAccuracy(accuracy::AccuracyArgs),
     /// Tune the evaluation weights on the recorded games of matches.
     Texel(texel::TexelArgs),
     /// Show recent engine matches.
@@ -286,6 +290,7 @@ fn main() -> ExitCode {
             nodes,
             count,
         } => return play::bench(&engine, variant, nodes, count),
+        Command::EngineAccuracy(args) => return accuracy::run(&open_db(&cli.db), &args),
         Command::Texel(args) => return texel::run(&open_db(&cli.db), &args),
         Command::Matches { limit } => return play::list(&open_db(&cli.db), limit),
         Command::Compare { a, b } => return bench::print_compare(&open_db(&cli.db), a, b),
