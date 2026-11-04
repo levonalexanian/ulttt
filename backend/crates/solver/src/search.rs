@@ -255,6 +255,14 @@ impl Solver for Search {
     fn stats(&self) -> Stats {
         self.stats
     }
+
+    fn reset(&mut self) {
+        self.stats = Stats::default();
+        self.history = [[0; 81]; 2];
+        if let Some(t) = self.tt.as_mut() {
+            t.clear();
+        }
+    }
 }
 
 #[cfg(test)]

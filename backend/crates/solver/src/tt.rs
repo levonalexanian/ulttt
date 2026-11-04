@@ -48,6 +48,11 @@ impl Table {
         }
     }
 
+    /// Empties the table.
+    pub fn clear(&mut self) {
+        self.entries.fill([0; 2]);
+    }
+
     /// The stored entry for a position hash, if present.
     #[inline]
     pub fn probe(&self, key: u64) -> Option<Entry> {
