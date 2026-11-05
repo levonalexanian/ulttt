@@ -60,27 +60,39 @@ export function useOnline() {
   const [guestArrived, setGuestArrived] = useState(0);
 
   function close() {
-    conn.current?.close();
-    peer.current?.destroy();
+    const oldConn = conn.current;
+    const oldPeer = peer.current;
     conn.current = null;
     peer.current = null;
     code.current = null;
+    oldConn?.close();
+    oldPeer?.destroy();
   }
 
   function attach(c: DataConnection, host: boolean) {
     conn.current = c;
     c.on("open", () => {
+      if (conn.current !== c) return;
       setStatus({ kind: "connected", host });
       if (host) setGuestArrived((n) => n + 1);
     });
-    c.on("data", (data) => setInbox((q) => [...q, data as Message]));
-    c.on("close", () => {
+    c.on("data", (data) => {
+      if (conn.current === c) setInbox((q) => [...q, data as Message]);
+    });
+    const disconnected = (reason: string) => {
       if (conn.current !== c) return;
       conn.current = null;
+      c.close();
       // The host keeps the game and its code, so the guest can come back.
       if (host && code.current) setStatus({ kind: "waiting", code: code.current });
-      else setStatus({ kind: "closed", reason: "Your opponent left." });
-    });
+      else {
+        close();
+        setStatus({ kind: "closed", reason });
+      }
+    };
+    c.on("close", () => disconnected("Your opponent left."));
+    // PeerJS does not emit `close` if negotiation fails before `open`.
+    c.on("error", () => disconnected("Could not connect to your opponent. Check your network and try again."));
   }
 
   function host() {
@@ -90,8 +102,14 @@ export function useOnline() {
     code.current = c;
     const p = new Peer(PREFIX + c);
     peer.current = p;
-    p.on("open", () => setStatus({ kind: "waiting", code: c }));
+    p.on("open", () => {
+      if (peer.current === p) setStatus({ kind: "waiting", code: c });
+    });
     p.on("connection", (c) => {
+      if (peer.current !== p) {
+        c.close();
+        return;
+      }
       // One opponent per game.
       if (conn.current) {
         c.on("open", () => c.close());
@@ -100,8 +118,12 @@ export function useOnline() {
       attach(c, true);
     });
     p.on("error", (e) => {
+      if (peer.current !== p) return;
       if (e.type === "unavailable-id") host();
-      else if (peer.current === p) setStatus({ kind: "closed", reason: `Connection error: ${e.type}` });
+      else {
+        close();
+        setStatus({ kind: "closed", reason: `Connection error: ${e.type}` });
+      }
     });
   }
 
@@ -112,9 +134,12 @@ export function useOnline() {
     setStatus({ kind: "connecting", code: c });
     const p = new Peer();
     peer.current = p;
-    p.on("open", () => attach(p.connect(PREFIX + c, { reliable: true }), false));
+    p.on("open", () => {
+      if (peer.current === p) attach(p.connect(PREFIX + c, { reliable: true }), false);
+    });
     p.on("error", (e) => {
       if (peer.current !== p) return;
+      close();
       setStatus({
         kind: "closed",
         reason: e.type === "peer-unavailable" ? "No game with that code." : `Connection error: ${e.type}`,
