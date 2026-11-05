@@ -22,14 +22,17 @@ const VERDICT_LABEL = { win: "wins", draw: "draws", loss: "loses", unknown: "unk
 
 export function Board({ pos, legal, lastMove, values, onMove, disabled }: Props) {
   const playable = new Set([...legal].map(boardOf));
+  // Free to play on any open board (the first move, or sent to a closed
+  // board): outline the whole board rather than each small one.
+  const anywhere = playable.size > 1;
   return (
-    <div className="global" role="grid" aria-label="Ultimate tic-tac-toe board">
+    <div className={`global${anywhere ? " anywhere" : ""}`} role="grid" aria-label="Ultimate tic-tac-toe board">
       {Array.from({ length: 9 }, (_, b) => {
         const owner = pos.owners[b];
         return (
           <div
             key={b}
-            className={`local${playable.has(b) ? " playable" : ""}${owner ? ` won won-${owner}` : ""}`}
+            className={`local${playable.has(b) && !anywhere ? " playable" : ""}${owner ? ` won won-${owner}` : ""}`}
           >
             {Array.from({ length: 9 }, (_, c) => {
               const m = 9 * b + c;

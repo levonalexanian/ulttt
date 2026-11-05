@@ -88,6 +88,10 @@ main {
   border-radius: var(--radius-sm);
 }
 
+.global.anywhere {
+  box-shadow: 0 0 0 4px var(--highlight);
+}
+
 .local.playable {
   box-shadow: 0 0 0 3px var(--highlight);
 }
