@@ -1,5 +1,5 @@
 name = "ulttt"
-defaultTargets = ["Ulttt", "ulttt-ref", "ulttt-check"]
+defaultTargets = ["Ulttt", "ulttt-ref", "ulttt-check", "ulttt-paper"]
 
 [leanOptions]
 autoImplicit = false
@@ -14,3 +14,7 @@ root = "Main"
 [[lean_exe]]
 name = "ulttt-check"
 root = "Check"
+
+[[lean_exe]]
+name = "ulttt-paper"
+root = "Paper"

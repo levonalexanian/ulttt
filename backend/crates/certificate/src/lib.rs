@@ -10,6 +10,8 @@
 //! A position's value needs one certificate if it is a win (for the winner) and
 //! two if it is a draw (at least a draw for each player).
 
+pub mod paper;
+
 use std::fmt;
 use std::str::FromStr;
 

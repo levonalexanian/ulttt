@@ -22,8 +22,11 @@ Build with `lake build` (CI runs it with `--wfail`, so warnings fail too).
 | `Ulttt/ValueFor.lean` | Values from one player's point of view and lemmas about them |
 | `Ulttt/MayWin.lean` | `mayWin`, when a player can no longer win, and its soundness proof |
 | `Ulttt/Certificate.lean` | The certificate checker `check` and its soundness proof |
+| `Ulttt/Closed.lean` | Proving a strategy by checking a closed set of positions, and its soundness proof |
+| `Ulttt/Paper.lean` | The winning strategy for X in `open` of Bertholon et al. (2020), and the proof that it wins |
 | `Main.lean` | `ulttt-ref`: the rules as an executable, for differential testing |
 | `Check.lean` | `ulttt-check`: checks certificate files with `check` |
+| `Paper.lean` | `ulttt-paper`: checks that the paper's strategy wins |
 
 ## Main results
 
@@ -43,10 +46,19 @@ Build with `lake build` (CI runs it with `--wfail`, so warnings fail too).
 - `check_sound`: if `check` accepts a certificate that player `p` can force at
   least `r`, then `r ≤ valueFor v p s`. Certificates are produced by the Rust
   solver (`ulttt certify`), which therefore does not need to be trusted.
+- `closedSetOk_sound`: if every position of a list is finished and won by
+  `p`, or `p`'s strategy moves legally back into the list, or every reply
+  leads back into it, then `p` wins from all of them. Unlike a strategy tree,
+  this counts each position once however it is reached.
+- `paper_wins`: if `paperCheck` (run by `ulttt-paper`) is true, X can force a
+  win in `open` from the empty board. It checks the strategy of Bertholon et
+  al. (2020) on the 63,960 positions it reaches against every reply of O.
 
 ## Trust
 
 Certificates are checked by the compiled `ulttt-check` executable, which runs
 `check` itself. Its results rely on Lean's kernel for the proofs, and on the
 Lean compiler and runtime, plus the certificate parser in `Check.lean`, for
-the execution.
+the execution. `ulttt-paper` likewise runs `paperCheck`, whose consequence
+`paper_wins` is proved by the kernel; the enumeration of positions it checks
+need not be trusted.
