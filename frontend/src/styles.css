@@ -1,35 +1,34 @@
+/* Pen on graph paper: one look for everyone, whatever the device's theme. */
+@import "@fontsource/patrick-hand/latin-400.css";
+@import "@fontsource/caveat/latin-700.css";
+
 :root {
-  --bg: #f6f5f1;
-  --panel: #ffffff;
-  --ink: #1d1d1f;
-  --muted: #6b6b70;
-  --line: #d9d7cf;
-  --line-strong: #8f8c82;
-  --x: #d1495b;
-  --o: #2e86ab;
-  --playable: #fff4c8;
-  --last: #ffe08a;
+  --bg: #fbfaf3;
+  --panel: #fffef8;
+  --ink: #23283a;
+  --muted: #6a6f80;
+  --line: #b9c6dc;
+  --line-strong: #2b3a55;
+  --x: #c0392b;
+  --o: #1f4e9c;
+  --last: #ffe066;
+  --highlight: #f2c94c;
+  --accent: #23283a;
   --win: #2f9e44;
   --draw: #868e96;
   --loss: #e03131;
   --unknown: #f0c419;
+  --font: "Patrick Hand", "Comic Sans MS", cursive;
+  --title-font: "Caveat", cursive;
+  --mark-font: "Caveat", cursive;
+  --title-size: 4.5rem;
+  --radius: 3px;
+  --radius-sm: 2px;
+  --panel-border: 1px solid #c9d3e6;
+  --panel-shadow: 2px 3px 0 rgba(43, 58, 85, 0.12);
+  --board-gap: 5px;
+  --cell-gap: 1px;
   color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17171a;
-    --panel: #222226;
-    --ink: #ececef;
-    --muted: #9a9aa2;
-    --line: #3a3a40;
-    --line-strong: #6c6c75;
-    --x: #ff6b7d;
-    --o: #5ec2ea;
-    --playable: #3a3520;
-    --last: #5a4c1a;
-    color-scheme: dark;
-  }
 }
 
 * {
@@ -40,7 +39,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font);
 }
 
 .app {
@@ -50,14 +49,12 @@ body {
 }
 
 header h1 {
-  margin: 0;
-  font-size: 1.8rem;
-  letter-spacing: 0.02em;
-}
-
-.tagline {
-  margin: 4px 0 16px;
-  color: var(--muted);
+  margin: 0 0 20px;
+  font-family: var(--title-font);
+  font-size: var(--title-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
 }
 
 main {
@@ -71,12 +68,12 @@ main {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  gap: 8px;
+  gap: var(--board-gap);
   width: min(100%, 600px);
   aspect-ratio: 1;
-  padding: 8px;
+  padding: var(--board-gap);
   background: var(--line-strong);
-  border-radius: 12px;
+  border-radius: var(--radius);
 }
 
 .local {
@@ -85,14 +82,18 @@ main {
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   min-height: 0;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--cell-gap);
+  padding: var(--cell-gap);
   background: var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
+}
+
+.global.anywhere {
+  box-shadow: 0 0 0 4px var(--highlight);
 }
 
 .local.playable {
-  box-shadow: 0 0 0 3px var(--unknown);
+  box-shadow: 0 0 0 3px var(--highlight);
 }
 
 .cell {
@@ -102,16 +103,13 @@ main {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 3px;
+  border-radius: calc(var(--radius-sm) / 2);
   background: var(--panel);
   padding: 0;
+  font-family: var(--mark-font);
   font-size: clamp(14px, 3.6vw, 26px);
   cursor: pointer;
   position: relative;
-}
-
-.local.playable .cell:not(:disabled) {
-  background: var(--playable);
 }
 
 .cell:disabled {
@@ -175,10 +173,11 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
+  font-family: var(--mark-font);
   font-size: clamp(48px, 13vw, 120px);
   font-weight: 800;
   pointer-events: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 /* Won boards are covered, except in `open` where they stay playable: the
@@ -203,24 +202,34 @@ aside {
   gap: 16px;
 }
 
+.status,
+.controls,
+.analysis,
+.online,
+.moves,
+details {
+  background: var(--panel);
+  border: var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--panel-shadow);
+}
+
 .status {
   font-size: 1.3rem;
   font-weight: 600;
   padding: 12px 16px;
-  background: var(--panel);
-  border-radius: 10px;
 }
 
 .status.over {
-  box-shadow: inset 4px 0 0 var(--win);
+  box-shadow:
+    inset 4px 0 0 var(--win),
+    var(--panel-shadow);
 }
 
 .controls {
   display: grid;
   gap: 10px;
   padding: 16px;
-  background: var(--panel);
-  border-radius: 10px;
 }
 
 .controls label {
@@ -230,10 +239,19 @@ aside {
   gap: 12px;
 }
 
-.controls select {
+select,
+button,
+input {
   font: inherit;
+  color: var(--ink);
+}
+
+.controls select {
   padding: 4px 8px;
   min-width: 140px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
 }
 
 .controls .toggle {
@@ -247,12 +265,10 @@ aside {
 
 .buttons button {
   flex: 1;
-  font: inherit;
   padding: 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line-strong);
   background: var(--bg);
-  color: var(--ink);
   cursor: pointer;
 }
 
@@ -264,8 +280,6 @@ aside {
 .analysis,
 .online {
   padding: 12px 16px;
-  background: var(--panel);
-  border-radius: 10px;
 }
 
 .analysis p,
@@ -288,8 +302,6 @@ aside {
   overflow-y: auto;
   margin: 0;
   padding: 12px 16px 12px 40px;
-  background: var(--panel);
-  border-radius: 10px;
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -300,8 +312,6 @@ aside {
 
 details {
   padding: 12px 16px;
-  background: var(--panel);
-  border-radius: 10px;
   color: var(--muted);
 }
 
@@ -341,23 +351,20 @@ summary {
 .load input {
   flex: 1;
   min-width: 0;
-  font: inherit;
   font-size: 0.85rem;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line-strong);
   background: var(--bg);
-  color: var(--ink);
 }
 
 .notation button,
-.load button {
-  font: inherit;
+.load button,
+.online p button {
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line-strong);
   background: var(--bg);
-  color: var(--ink);
   cursor: pointer;
 }
 
@@ -369,4 +376,77 @@ summary {
   color: var(--muted);
   font-size: 0.9rem;
   overflow-wrap: anywhere;
+}
+
+.thinking {
+  color: var(--accent);
+}
+
+.thinking .spinner {
+  display: inline-block;
+  width: 1.2em;
+  text-align: center;
+  margin-right: 0.35em;
+}
+
+/* Keep the text still while the dots count up. */
+.thinking .dots {
+  display: inline-block;
+  width: 1.5em;
+  text-align: left;
+}
+
+/* The paper and handwriting. */
+body {
+  font-size: 1.15rem;
+  /* Faint blue graph paper with a red margin line. */
+  background-image:
+    linear-gradient(90deg, transparent 39px, rgba(220, 80, 80, 0.35) 39px, rgba(220, 80, 80, 0.35) 41px, transparent 41px),
+    linear-gradient(rgba(80, 120, 200, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(80, 120, 200, 0.14) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    24px 24px,
+    24px 24px;
+}
+
+header h1 {
+  letter-spacing: 0.02em;
+  transform: rotate(-2deg);
+}
+
+.cell {
+  font-size: clamp(18px, 5vw, 36px);
+}
+
+.owner {
+  font-size: clamp(64px, 17vw, 160px);
+}
+
+/* The pencil scribbles back and forth while the engine thinks. */
+.thinking .spinner {
+  animation: scribble 0.7s ease-in-out infinite;
+  transform-origin: 20% 90%;
+}
+
+@keyframes scribble {
+  0%,
+  100% {
+    transform: translateX(-2px) rotate(-14deg);
+  }
+  25% {
+    transform: translate(1px, -1px) rotate(6deg);
+  }
+  50% {
+    transform: translateX(3px) rotate(-8deg);
+  }
+  75% {
+    transform: translate(0, 1px) rotate(10deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking .spinner {
+    animation: none;
+  }
 }

@@ -24,3 +24,6 @@ export function parsePosition(s: string): Position {
 
 export const boardOf = (move: number) => Math.floor(move / 9);
 export const cellOf = (move: number) => move % 9;
+
+/** How a player's mark is written. */
+export const glyph = (p: "x" | "o") => (p === "x" ? "X" : "O");

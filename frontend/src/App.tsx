@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Board } from "./Board";
+import { Thinking, randomWord } from "./Thinking";
 import { engine, type Result, type Value, VARIANTS, type Variant } from "./engine";
 import { codeFromUrl, joinLink, useOnline } from "./online";
-import { boardOf, cellOf, parsePosition } from "./position";
+import { boardOf, cellOf, glyph, parsePosition } from "./position";
 
 type Mode = "two-players" | "play-x" | "play-o" | "online";
 
 const MODES: { id: Mode; label: string }[] = [
-  { id: "play-x", label: "You play ×" },
-  { id: "play-o", label: "You play ○" },
+  { id: "play-x", label: `You play ${glyph("x")}` },
+  { id: "play-o", label: `You play ${glyph("o")}` },
   { id: "two-players", label: "Two players" },
   { id: "online", label: "Online" },
 ];
@@ -23,7 +24,7 @@ const STRENGTHS = [
 const START = `${".".repeat(81)}/${".".repeat(9)}/x/-`;
 
 const other = (p: "x" | "o") => (p === "x" ? "o" : "x");
-const markOf = (p: "x" | "o") => (p === "x" ? "×" : "○");
+const markOf = glyph;
 
 /** The positions of a game: the start and after each move. */
 async function replay(variant: Variant, moves: number[]): Promise<string[]> {
@@ -35,9 +36,9 @@ async function replay(variant: Variant, moves: number[]): Promise<string[]> {
 function describeValue(v: Value | null): string {
   switch (v) {
     case 1:
-      return "× wins with perfect play";
+      return `${glyph("x")} wins with perfect play`;
     case -1:
-      return "○ wins with perfect play";
+      return `${glyph("o")} wins with perfect play`;
     case 0:
       return "Draw with perfect play";
     case 2:
@@ -61,7 +62,8 @@ export function App() {
   const [values, setValues] = useState<Map<number, Value> | null>(null);
   const [posValue, setPosValue] = useState<Value | null>(null);
   const [line, setLine] = useState<number[]>([]);
-  const [thinking, setThinking] = useState(false);
+  // While the engine thinks, the word it shows (e.g. "Pondering").
+  const [thinking, setThinking] = useState<string | null>(null);
   const [loadText, setLoadText] = useState("");
   const [loadError, setLoadError] = useState("");
   // Bumped on every change, so answers about an older position are ignored.
@@ -69,7 +71,7 @@ export function App() {
 
   const online = useOnline();
   const [joinText, setJoinText] = useState("");
-  // Online: the side this browser plays. The host starts as ×.
+  // Online: the side this browser plays. The host starts as X.
   const [me, setMe] = useState<"x" | "o">("x");
   // Online: set while a received message is being applied.
   const busy = useRef(false);
@@ -207,11 +209,26 @@ export function App() {
   useEffect(() => {
     if (!solverTurn) return;
     const gen = generation.current;
-    setThinking(true);
-    engine.bestMove(variant, current, nodeLimit).then((m) => {
-      setThinking(false);
+    let live = true;
+    let timer = 0;
+    setThinking(randomWord());
+    // The engine answers in well under a second; it takes 3-6 seconds to look
+    // like it is thinking, so the game does not feel rushed. Raising the
+    // random number to the power 1.5 slightly favors short waits: 48% under
+    // 4 s and 76% under 5 s, against 33% and 67% for an even spread.
+    const wait = new Promise((resolve) => {
+      timer = window.setTimeout(resolve, 3000 + 3000 * Math.random() ** 1.5);
+    });
+    Promise.all([engine.bestMove(variant, current, nodeLimit), wait]).then(([m]) => {
+      if (!live) return;
+      setThinking(null);
       if (gen === generation.current && m >= 0) playMove(m);
     });
+    return () => {
+      live = false;
+      clearTimeout(timer);
+      setThinking(null);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solverTurn, variant, current, nodeLimit]);
 
@@ -240,7 +257,7 @@ export function App() {
       : result
         ? `${markOf(result)} wins`
         : thinking
-          ? "Solver is thinking…"
+          ? <Thinking word={thinking} />
           : mode === "online" && connected
             ? pos.toMove === me
               ? `Your move (${markOf(me)})`
@@ -253,7 +270,6 @@ export function App() {
     <div className="app">
       <header>
         <h1>ulttt</h1>
-        <p className="tagline">Ultimate tic-tac-toe with an exact solver</p>
       </header>
       <main>
         <Board
@@ -262,7 +278,7 @@ export function App() {
           lastMove={moves.length ? moves[moves.length - 1] : null}
           values={analysisShown ? values : null}
           onMove={(m) => playMove(m)}
-          disabled={solverTurn || thinking || waitingForPeer}
+          disabled={solverTurn || thinking !== null || waitingForPeer}
         />
         <aside>
           <div className={`status${result ? " over" : ""}`} aria-live="polite">
@@ -400,7 +416,7 @@ export function App() {
                 <p className="line">
                   Best line:{" "}
                   {line
-                    .map((m, i) => `${(pos.toMove === "x") === (i % 2 === 0) ? "×" : "○"}${boardOf(m) + 1}.${cellOf(m) + 1}`)
+                    .map((m, i) => `${glyph((pos.toMove === "x") === (i % 2 === 0) ? "x" : "o")}${boardOf(m) + 1}.${cellOf(m) + 1}`)
                     .join(" ")}
                 </p>
               ) : null}
@@ -413,7 +429,7 @@ export function App() {
           <ol className="moves">
             {moves.map((m, i) => (
               <li key={i}>
-                {i % 2 === 0 ? "×" : "○"} board {boardOf(m) + 1}, cell {cellOf(m) + 1}
+                {glyph(i % 2 === 0 ? "x" : "o")} board {boardOf(m) + 1}, cell {cellOf(m) + 1}
               </li>
             ))}
           </ol>
