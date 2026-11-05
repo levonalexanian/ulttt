@@ -26,6 +26,8 @@ export type Status =
 const PREFIX = "ulttt-game-";
 // Unambiguous characters, so a code read aloud is easy to type.
 const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+const CONNECT_TIMEOUT_MS = 10_000;
+const TIMEOUT_REASON = "Could not connect within 10 seconds. Try again or use a different network.";
 
 function newCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
@@ -56,31 +58,54 @@ export function useOnline() {
   const peer = useRef<Peer | null>(null);
   const conn = useRef<DataConnection | null>(null);
   const code = useRef<string | null>(null);
+  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set when the host's guest connects, so the app can send the first state.
   const [guestArrived, setGuestArrived] = useState(0);
 
+  function clearConnectTimeout() {
+    if (timeout.current !== null) window.clearTimeout(timeout.current);
+    timeout.current = null;
+  }
+
   function close() {
-    conn.current?.close();
-    peer.current?.destroy();
+    clearConnectTimeout();
+    const oldConn = conn.current;
+    const oldPeer = peer.current;
     conn.current = null;
     peer.current = null;
     code.current = null;
+    oldConn?.close();
+    oldPeer?.destroy();
   }
 
   function attach(c: DataConnection, host: boolean) {
     conn.current = c;
     c.on("open", () => {
+      if (conn.current !== c) return;
+      clearConnectTimeout();
       setStatus({ kind: "connected", host });
       if (host) setGuestArrived((n) => n + 1);
     });
-    c.on("data", (data) => setInbox((q) => [...q, data as Message]));
-    c.on("close", () => {
+    c.on("data", (data) => {
+      if (conn.current === c) setInbox((q) => [...q, data as Message]);
+    });
+    const disconnected = (reason: string) => {
       if (conn.current !== c) return;
+      clearConnectTimeout();
       conn.current = null;
+      c.close();
       // The host keeps the game and its code, so the guest can come back.
       if (host && code.current) setStatus({ kind: "waiting", code: code.current });
-      else setStatus({ kind: "closed", reason: "Your opponent left." });
-    });
+      else {
+        close();
+        setStatus({ kind: "closed", reason });
+      }
+    };
+    c.on("close", () => disconnected("Your opponent left."));
+    // PeerJS does not emit `close` if negotiation fails before `open`.
+    c.on("error", () => disconnected("Could not connect to your opponent. Check your network and try again."));
+    // A stalled incoming attempt must not reserve the host's only guest slot.
+    if (host) timeout.current = window.setTimeout(() => disconnected(TIMEOUT_REASON), CONNECT_TIMEOUT_MS);
   }
 
   function host() {
@@ -90,8 +115,14 @@ export function useOnline() {
     code.current = c;
     const p = new Peer(PREFIX + c);
     peer.current = p;
-    p.on("open", () => setStatus({ kind: "waiting", code: c }));
+    p.on("open", () => {
+      if (peer.current === p) setStatus({ kind: "waiting", code: c });
+    });
     p.on("connection", (c) => {
+      if (peer.current !== p) {
+        c.close();
+        return;
+      }
       // One opponent per game.
       if (conn.current) {
         c.on("open", () => c.close());
@@ -100,8 +131,12 @@ export function useOnline() {
       attach(c, true);
     });
     p.on("error", (e) => {
+      if (peer.current !== p) return;
       if (e.type === "unavailable-id") host();
-      else if (peer.current === p) setStatus({ kind: "closed", reason: `Connection error: ${e.type}` });
+      else {
+        close();
+        setStatus({ kind: "closed", reason: `Connection error: ${e.type}` });
+      }
     });
   }
 
@@ -112,9 +147,18 @@ export function useOnline() {
     setStatus({ kind: "connecting", code: c });
     const p = new Peer();
     peer.current = p;
-    p.on("open", () => attach(p.connect(PREFIX + c, { reliable: true }), false));
+    // Include signaling in the deadline; don't restart it when the peer opens.
+    timeout.current = window.setTimeout(() => {
+      if (peer.current !== p) return;
+      close();
+      setStatus({ kind: "closed", reason: TIMEOUT_REASON });
+    }, CONNECT_TIMEOUT_MS);
+    p.on("open", () => {
+      if (peer.current === p) attach(p.connect(PREFIX + c, { reliable: true }), false);
+    });
     p.on("error", (e) => {
       if (peer.current !== p) return;
+      close();
       setStatus({
         kind: "closed",
         reason: e.type === "peer-unavailable" ? "No game with that code." : `Connection error: ${e.type}`,
