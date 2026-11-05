@@ -26,6 +26,8 @@ export type Status =
 const PREFIX = "ulttt-game-";
 // Unambiguous characters, so a code read aloud is easy to type.
 const ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
+const CONNECT_TIMEOUT_MS = 10_000;
+const TIMEOUT_REASON = "Could not connect within 10 seconds. Try again or use a different network.";
 
 function newCode(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
@@ -56,10 +58,17 @@ export function useOnline() {
   const peer = useRef<Peer | null>(null);
   const conn = useRef<DataConnection | null>(null);
   const code = useRef<string | null>(null);
+  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set when the host's guest connects, so the app can send the first state.
   const [guestArrived, setGuestArrived] = useState(0);
 
+  function clearConnectTimeout() {
+    if (timeout.current !== null) window.clearTimeout(timeout.current);
+    timeout.current = null;
+  }
+
   function close() {
+    clearConnectTimeout();
     const oldConn = conn.current;
     const oldPeer = peer.current;
     conn.current = null;
@@ -73,6 +82,7 @@ export function useOnline() {
     conn.current = c;
     c.on("open", () => {
       if (conn.current !== c) return;
+      clearConnectTimeout();
       setStatus({ kind: "connected", host });
       if (host) setGuestArrived((n) => n + 1);
     });
@@ -81,6 +91,7 @@ export function useOnline() {
     });
     const disconnected = (reason: string) => {
       if (conn.current !== c) return;
+      clearConnectTimeout();
       conn.current = null;
       c.close();
       // The host keeps the game and its code, so the guest can come back.
@@ -93,6 +104,8 @@ export function useOnline() {
     c.on("close", () => disconnected("Your opponent left."));
     // PeerJS does not emit `close` if negotiation fails before `open`.
     c.on("error", () => disconnected("Could not connect to your opponent. Check your network and try again."));
+    // A stalled incoming attempt must not reserve the host's only guest slot.
+    if (host) timeout.current = window.setTimeout(() => disconnected(TIMEOUT_REASON), CONNECT_TIMEOUT_MS);
   }
 
   function host() {
@@ -134,6 +147,12 @@ export function useOnline() {
     setStatus({ kind: "connecting", code: c });
     const p = new Peer();
     peer.current = p;
+    // Include signaling in the deadline; don't restart it when the peer opens.
+    timeout.current = window.setTimeout(() => {
+      if (peer.current !== p) return;
+      close();
+      setStatus({ kind: "closed", reason: TIMEOUT_REASON });
+    }, CONNECT_TIMEOUT_MS);
     p.on("open", () => {
       if (peer.current === p) attach(p.connect(PREFIX + c, { reliable: true }), false);
     });

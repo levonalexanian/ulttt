@@ -179,3 +179,75 @@ test("leaving an open connection stays idle despite synchronous close events", (
   assert.equal(h.status.kind, "idle");
   assert.equal(h.peers[0].destroyed, true);
 });
+
+test("the guest deadline includes signaling and negotiation in one ten-second budget", () => {
+  const h = setup();
+  h.online.join("abcdef");
+  h.advance(9_000);
+  h.peers[0].emit("open");
+  h.advance(999);
+  assert.equal(h.status.kind, "connecting");
+  h.advance(1);
+  assert.equal(h.status.kind, "closed");
+  assert.match(h.status.reason, /10 seconds/);
+  assert.equal(h.peers[0].destroyed, true);
+  assert.equal(h.peers[0].connections[0].closed, true);
+  assert.equal(h.timers, 0);
+});
+
+test("a guest can time out before the signaling server responds", () => {
+  const h = setup();
+  h.online.join("abcdef");
+  h.advance(10_000);
+  h.peers[0].emit("open");
+  assert.equal(h.status.kind, "closed");
+  assert.equal(h.peers[0].connections.length, 0);
+});
+
+test("a stalled incoming attempt times out and the host accepts a retry", () => {
+  const h = setup();
+  h.online.host();
+  const p = h.peers[0];
+  p.emit("open");
+  const first = new h.Connection();
+  p.emit("connection", first);
+  h.advance(10_000);
+  assert.equal(first.closed, true);
+  assert.equal(h.status.kind, "waiting");
+  const retry = new h.Connection();
+  p.emit("connection", retry);
+  retry.establish();
+  h.advance(10_000);
+  assert.equal(h.status.kind, "connected");
+  assert.equal(h.timers, 0);
+});
+
+test("an established connection survives past the deadline", () => {
+  const h = setup();
+  h.online.join("abcdef");
+  h.peers[0].emit("open");
+  h.peers[0].connections[0].establish();
+  h.advance(60_000);
+  assert.equal(h.status.kind, "connected");
+  assert.equal(h.peers[0].destroyed, false);
+  assert.equal(h.timers, 0);
+});
+
+test("leaving, retrying, and unmounting cancel obsolete deadlines", () => {
+  const h = setup();
+  h.online.join("first");
+  h.advance(5_000);
+  h.online.join("second");
+  h.advance(5_000);
+  assert.equal(h.status.kind, "connecting");
+  assert.equal(h.status.code, "second");
+  assert.equal(h.timers, 1);
+  h.online.leave();
+  h.advance(20_000);
+  assert.equal(h.status.kind, "idle");
+  assert.equal(h.timers, 0);
+  h.online.join("third");
+  h.cleanup();
+  assert.equal(h.timers, 0);
+  assert.equal(h.peers[2].destroyed, true);
+});
