@@ -50,14 +50,10 @@ body {
 }
 
 header h1 {
-  margin: 0;
-  font-size: 1.8rem;
-  letter-spacing: 0.02em;
-}
-
-.tagline {
-  margin: 4px 0 16px;
-  color: var(--muted);
+  margin: 0 0 20px;
+  font-size: 3rem;
+  letter-spacing: 0.04em;
+  text-align: center;
 }
 
 main {

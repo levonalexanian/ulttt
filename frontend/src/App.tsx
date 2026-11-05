@@ -253,7 +253,6 @@ export function App() {
     <div className="app">
       <header>
         <h1>ulttt</h1>
-        <p className="tagline">Ultimate tic-tac-toe with an exact solver</p>
       </header>
       <main>
         <Board
