@@ -212,10 +212,12 @@ export function App() {
     let live = true;
     let timer = 0;
     setThinking(randomWord());
-    // The engine answers in well under a second; it takes 3-7 seconds to look
-    // like it is thinking, so the game does not feel rushed.
+    // The engine answers in well under a second; it takes 3-6 seconds to look
+    // like it is thinking, so the game does not feel rushed. Raising the
+    // random number to the power 1.5 slightly favors short waits: 48% under
+    // 4 s and 76% under 5 s, against 33% and 67% for an even spread.
     const wait = new Promise((resolve) => {
-      timer = window.setTimeout(resolve, 3000 + Math.random() * 4000);
+      timer = window.setTimeout(resolve, 3000 + 3000 * Math.random() ** 1.5);
     });
     Promise.all([engine.bestMove(variant, current, nodeLimit), wait]).then(([m]) => {
       if (!live) return;
