@@ -11,3 +11,4 @@ import Ulttt.Examples
 import Ulttt.Symmetry
 import Ulttt.SymmetryRules
 import Ulttt.Closed
+import Ulttt.Paper
