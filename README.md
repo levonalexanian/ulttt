@@ -23,7 +23,7 @@ Three rule variants are supported everywhere; see [`RULES.md`](RULES.md):
 | Storage | `backend/crates/db` | SQLite: benchmark suites, runs, solved and Lean-verified positions |
 | CLI | `backend/crates/cli` | `ulttt perft`, `solve [--pv]`, `certify`, `verify`, `suite-create`, `bench`, `runs`, `compare`, `match`, `matches`, `engine-bench` |
 | Differential tests | `backend/crates/difftest` | Rust rules, `may_win` and every solver's values against the Lean definitions on random games |
-| Frontend | `frontend/` | React app: play against the solver, analysis with the best line; the engine runs in the browser as WebAssembly |
+| Frontend | `frontend/` | React app: play against the engine, or online against a friend (peer-to-peer over WebRTC, no server of our own); analysis with the best line; the engine runs in the browser as WebAssembly |
 
 ## How the pieces check each other
 

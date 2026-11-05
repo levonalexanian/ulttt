@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Board } from "./Board";
 import { engine, type Result, type Value, VARIANTS, type Variant } from "./engine";
+import { codeFromUrl, joinLink, useOnline } from "./online";
 import { boardOf, cellOf, parsePosition } from "./position";
 
-type Mode = "two-players" | "play-x" | "play-o";
+type Mode = "two-players" | "play-x" | "play-o" | "online";
 
 const MODES: { id: Mode; label: string }[] = [
   { id: "play-x", label: "You play ×" },
   { id: "play-o", label: "You play ○" },
   { id: "two-players", label: "Two players" },
+  { id: "online", label: "Online" },
 ];
 
 const STRENGTHS = [
@@ -19,6 +21,16 @@ const STRENGTHS = [
 ];
 
 const START = `${".".repeat(81)}/${".".repeat(9)}/x/-`;
+
+const other = (p: "x" | "o") => (p === "x" ? "o" : "x");
+const markOf = (p: "x" | "o") => (p === "x" ? "×" : "○");
+
+/** The positions of a game: the start and after each move. */
+async function replay(variant: Variant, moves: number[]): Promise<string[]> {
+  const history = [START];
+  for (const m of moves) history.push(await engine.play(variant, history[history.length - 1], m));
+  return history;
+}
 
 function describeValue(v: Value | null): string {
   switch (v) {
@@ -37,7 +49,9 @@ function describeValue(v: Value | null): string {
 
 export function App() {
   const [variant, setVariant] = useState<Variant>("classic");
-  const [mode, setMode] = useState<Mode>("play-x");
+  // A link with `?join=` opens straight into that online game.
+  const joinCode = useRef(codeFromUrl());
+  const [mode, setMode] = useState<Mode>(joinCode.current ? "online" : "play-x");
   const [strength, setStrength] = useState(1);
   const [analysis, setAnalysis] = useState(false);
   const [history, setHistory] = useState<string[]>([START]);
@@ -53,11 +67,22 @@ export function App() {
   // Bumped on every change, so answers about an older position are ignored.
   const generation = useRef(0);
 
+  const online = useOnline();
+  const [joinText, setJoinText] = useState("");
+  // Online: the side this browser plays. The host starts as ×.
+  const [me, setMe] = useState<"x" | "o">("x");
+  // Online: set while a received message is being applied.
+  const busy = useRef(false);
+
   const current = history[history.length - 1];
   const pos = parsePosition(current);
   const nodeLimit = STRENGTHS[strength].nodes;
   const solverTurn =
     result === "" && ((mode === "play-x" && pos.toMove === "o") || (mode === "play-o" && pos.toMove === "x"));
+  const status_ = online.status;
+  const connected = status_.kind === "connected";
+  const isHost = status_.kind === "waiting" || (status_.kind === "connected" && status_.host);
+  const waitingForPeer = mode === "online" && (!connected || pos.toMove !== me);
 
   function newGame() {
     generation.current++;
@@ -65,11 +90,28 @@ export function App() {
     setMoves([]);
   }
 
+  /** Online, as host: tells the guest the game, with its moves so far. */
+  function sendStart(v: Variant, host: "x" | "o", ms: number[]) {
+    online.send({ type: "start", variant: v, you: other(host), moves: ms });
+  }
+
+  /** Online: a new game with sides swapped. The guest asks the host for it. */
+  function rematch() {
+    if (!isHost) {
+      online.send({ type: "rematch" });
+      return;
+    }
+    const swapped = other(me);
+    setMe(swapped);
+    newGame();
+    sendStart(variant, swapped, []);
+  }
+
   function undo() {
     generation.current++;
     // Against the solver, take back both its reply and your move.
     const steps = mode === "two-players" ? 1 : moves.length >= 2 ? 2 : 1;
-    if (moves.length === 0) return;
+    if (moves.length === 0 || mode === "online") return;
     setHistory((h) => h.slice(0, Math.max(1, h.length - steps)));
     setMoves((m) => m.slice(0, Math.max(0, m.length - steps)));
   }
@@ -89,14 +131,64 @@ export function App() {
     setMoves([]);
   }
 
-  async function playMove(move: number) {
+  async function playMove(move: number, fromPeer = false) {
     const gen = generation.current;
     const next = await engine.play(variant, current, move);
     if (gen !== generation.current) return;
     generation.current++;
+    if (mode === "online" && !fromPeer) online.send({ type: "move", ply: moves.length, move });
     setHistory((h) => [...h, next]);
     setMoves((m) => [...m, move]);
   }
+
+  // Online: a link with `?join=` joins that game.
+  useEffect(() => {
+    const code = joinCode.current;
+    if (code) {
+      online.join(code);
+      // A reload should not join again behind the player's back.
+      window.history.replaceState(null, "", location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Online, as host: a guest who arrives (or comes back) gets the game so far.
+  useEffect(() => {
+    if (online.guestArrived) sendStart(variant, me, moves);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online.guestArrived]);
+
+  // Online: apply the other player's messages one at a time, in order.
+  useEffect(() => {
+    const msg = online.inbox[0];
+    if (!msg || busy.current) return;
+    busy.current = true;
+    const done = () => {
+      busy.current = false;
+      online.take();
+    };
+    if (msg.type === "start" && !isHost) {
+      generation.current++;
+      const gen = generation.current;
+      replay(msg.variant, msg.moves)
+        .then((h) => {
+          if (gen !== generation.current) return;
+          generation.current++;
+          setVariant(msg.variant);
+          setMe(msg.you);
+          setHistory(h);
+          setMoves(msg.moves);
+        })
+        .catch(() => {})
+        .finally(done);
+    } else if (msg.type === "move" && msg.ply === moves.length && pos.toMove !== me && legal.has(msg.move)) {
+      playMove(msg.move, true).finally(done);
+    } else {
+      if (msg.type === "rematch" && isHost) rematch();
+      done();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online.inbox, moves, legal]);
 
   // Rules: legal moves and the result of the current position.
   useEffect(() => {
@@ -125,7 +217,7 @@ export function App() {
 
   // Analysis: the value of the position and of each legal move.
   useEffect(() => {
-    if (!analysis || result !== "" || solverTurn) return;
+    if (!analysis || result !== "" || solverTurn || mode === "online") return;
     const gen = generation.current;
     engine.solve(variant, current, nodeLimit).then((v) => {
       if (gen !== generation.current) return;
@@ -140,16 +232,22 @@ export function App() {
     engine.analyze(variant, current, nodeLimit).then((vals) => {
       if (gen === generation.current) setValues(vals);
     });
-  }, [analysis, variant, current, nodeLimit, result, solverTurn]);
+  }, [analysis, variant, current, nodeLimit, result, solverTurn, mode]);
 
   const status =
     result === "draw"
       ? "Draw"
       : result
-        ? `${result === "x" ? "×" : "○"} wins`
+        ? `${markOf(result)} wins`
         : thinking
           ? "Solver is thinking…"
-          : `${pos.toMove === "x" ? "×" : "○"} to move`;
+          : mode === "online" && connected
+            ? pos.toMove === me
+              ? `Your move (${markOf(me)})`
+              : "Opponent's move"
+            : `${markOf(pos.toMove)} to move`;
+
+  const analysisShown = analysis && mode !== "online";
 
   return (
     <div className="app">
@@ -162,9 +260,9 @@ export function App() {
           pos={pos}
           legal={legal}
           lastMove={moves.length ? moves[moves.length - 1] : null}
-          values={analysis ? values : null}
-          onMove={playMove}
-          disabled={solverTurn || thinking}
+          values={analysisShown ? values : null}
+          onMove={(m) => playMove(m)}
+          disabled={solverTurn || thinking || waitingForPeer}
         />
         <aside>
           <div className={`status${result ? " over" : ""}`} aria-live="polite">
@@ -175,9 +273,12 @@ export function App() {
               Rules
               <select
                 value={variant}
+                disabled={mode === "online" && !isHost}
                 onChange={(e) => {
-                  setVariant(e.target.value as Variant);
+                  const v = e.target.value as Variant;
+                  setVariant(v);
                   newGame();
+                  if (mode === "online") sendStart(v, me, []);
                 }}
               >
                 {VARIANTS.map((v) => (
@@ -192,7 +293,9 @@ export function App() {
               <select
                 value={mode}
                 onChange={(e) => {
+                  if (mode === "online") online.leave();
                   setMode(e.target.value as Mode);
+                  setMe("x");
                   newGame();
                 }}
               >
@@ -203,28 +306,94 @@ export function App() {
                 ))}
               </select>
             </label>
-            <label>
-              Strength
-              <select value={strength} onChange={(e) => setStrength(Number(e.target.value))}>
-                {STRENGTHS.map((s, i) => (
-                  <option key={s.label} value={i}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="toggle">
-              <input type="checkbox" checked={analysis} onChange={(e) => setAnalysis(e.target.checked)} />
-              Show analysis
-            </label>
+            {mode === "online" ? null : (
+              <>
+                <label>
+                  Strength
+                  <select value={strength} onChange={(e) => setStrength(Number(e.target.value))}>
+                    {STRENGTHS.map((s, i) => (
+                      <option key={s.label} value={i}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="toggle">
+                  <input type="checkbox" checked={analysis} onChange={(e) => setAnalysis(e.target.checked)} />
+                  Show analysis
+                </label>
+              </>
+            )}
             <div className="buttons">
-              <button onClick={newGame}>New game</button>
-              <button onClick={undo} disabled={moves.length === 0}>
-                Undo
-              </button>
+              {mode === "online" ? (
+                <button onClick={rematch} disabled={!connected}>
+                  Rematch
+                </button>
+              ) : (
+                <>
+                  <button onClick={newGame}>New game</button>
+                  <button onClick={undo} disabled={moves.length === 0}>
+                    Undo
+                  </button>
+                </>
+              )}
             </div>
           </div>
-          {analysis && result === "" ? (
+          {mode === "online" ? (
+            <div className="online">
+              {status_.kind === "waiting" ? (
+                <>
+                  <p>Send this link to your opponent:</p>
+                  <p className="notation">
+                    <code>{joinLink(status_.code)}</code>
+                    <button onClick={() => navigator.clipboard?.writeText(joinLink(status_.code))}>Copy</button>
+                  </p>
+                  <p>
+                    Or tell them the code <b>{status_.code}</b>. Waiting for them to join…
+                  </p>
+                </>
+              ) : status_.kind === "connecting" ? (
+                <p>Connecting to game {status_.code}…</p>
+              ) : status_.kind === "connected" ? (
+                <p>
+                  Connected. You play {markOf(me)}. <button onClick={online.leave}>Leave</button>
+                </p>
+              ) : (
+                <>
+                  {status_.kind === "closed" ? <p className="error">{status_.reason}</p> : null}
+                  <div className="buttons">
+                    <button
+                      onClick={() => {
+                        setMe("x");
+                        newGame();
+                        online.host();
+                      }}
+                    >
+                      Create game
+                    </button>
+                  </div>
+                  <form
+                    className="load"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      // Accept a pasted link as well as a bare code.
+                      const code = joinText.trim().split("join=").pop() ?? "";
+                      if (code) online.join(code);
+                    }}
+                  >
+                    <input
+                      value={joinText}
+                      onChange={(e) => setJoinText(e.target.value)}
+                      placeholder="Game code or link"
+                      aria-label="Game code or link"
+                    />
+                    <button type="submit">Join</button>
+                  </form>
+                </>
+              )}
+            </div>
+          ) : null}
+          {analysisShown && result === "" ? (
             <div className="analysis">
               <p>{describeValue(posValue)}</p>
               {line.length ? (
@@ -248,29 +417,31 @@ export function App() {
               </li>
             ))}
           </ol>
-          <details>
-            <summary>Position</summary>
-            <p className="notation">
-              <code>{current}</code>
-              <button onClick={() => navigator.clipboard?.writeText(current)}>Copy</button>
-            </p>
-            <form
-              className="load"
-              onSubmit={(e) => {
-                e.preventDefault();
-                loadPosition(loadText);
-              }}
-            >
-              <input
-                value={loadText}
-                onChange={(e) => setLoadText(e.target.value)}
-                placeholder="Paste a position, e.g. from `ulttt random`"
-                aria-label="Position to load"
-              />
-              <button type="submit">Load</button>
-            </form>
-            {loadError ? <p className="error">{loadError}</p> : null}
-          </details>
+          {mode === "online" ? null : (
+            <details>
+              <summary>Position</summary>
+              <p className="notation">
+                <code>{current}</code>
+                <button onClick={() => navigator.clipboard?.writeText(current)}>Copy</button>
+              </p>
+              <form
+                className="load"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  loadPosition(loadText);
+                }}
+              >
+                <input
+                  value={loadText}
+                  onChange={(e) => setLoadText(e.target.value)}
+                  placeholder="Paste a position, e.g. from `ulttt random`"
+                  aria-label="Position to load"
+                />
+                <button type="submit">Load</button>
+              </form>
+              {loadError ? <p className="error">{loadError}</p> : null}
+            </details>
+          )}
           <details>
             <summary>Rules</summary>
             <p>
