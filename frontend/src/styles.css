@@ -457,3 +457,42 @@ header h1 {
   color: var(--panel);
   font-size: 1.1rem;
 }
+
+/* Everything pressable darkens under the pointer, and a little more while
+   pressed. */
+button:not(:disabled):not(.cell),
+select:not(:disabled),
+summary,
+.toggle {
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+button:not(:disabled):not(.cell):hover,
+select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--ink) 9%, var(--bg));
+}
+
+button:not(:disabled):not(.cell):active {
+  background-color: color-mix(in srgb, var(--ink) 16%, var(--bg));
+}
+
+.buttons button.primary:not(:disabled):hover {
+  background-color: color-mix(in srgb, #000 25%, var(--line-strong));
+}
+
+.buttons button.primary:not(:disabled):active {
+  background-color: color-mix(in srgb, #000 40%, var(--line-strong));
+}
+
+details:has(> summary:hover) {
+  background-color: color-mix(in srgb, var(--ink) 5%, var(--panel));
+}
+
+.toggle:hover {
+  color: color-mix(in srgb, var(--ink) 75%, #000);
+}
+
+.cell:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--ink) 8%, var(--panel));
+}
