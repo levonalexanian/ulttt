@@ -11,7 +11,6 @@
   --line-strong: #2b3a55;
   --x: #c0392b;
   --o: #1f4e9c;
-  --playable: #fff7a8;
   --last: #ffe066;
   --highlight: #f2c94c;
   --accent: #23283a;
@@ -107,10 +106,6 @@ main {
   font-size: clamp(14px, 3.6vw, 26px);
   cursor: pointer;
   position: relative;
-}
-
-.local.playable .cell:not(:disabled) {
-  background: var(--playable);
 }
 
 .cell:disabled {
