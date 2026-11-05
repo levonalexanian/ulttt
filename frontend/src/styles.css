@@ -450,3 +450,10 @@ header h1 {
     animation: none;
   }
 }
+
+.buttons button.primary {
+  background: var(--line-strong);
+  border-color: var(--line-strong);
+  color: var(--panel);
+  font-size: 1.1rem;
+}

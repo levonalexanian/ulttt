@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Board } from "./Board";
 import { Thinking, randomWord } from "./Thinking";
-import { engine, type Result, type Value, VARIANTS, type Variant } from "./engine";
+import { analyst, engine, type Result, type Value, VARIANTS, type Variant } from "./engine";
 import { codeFromUrl, joinLink, useOnline } from "./online";
 import { boardOf, cellOf, glyph, parsePosition } from "./position";
 
@@ -14,12 +14,21 @@ const MODES: { id: Mode; label: string }[] = [
   { id: "online", label: "Online" },
 ];
 
-const STRENGTHS = [
+/** Engine strengths: positions searched per move, or `null` to think for the
+ * whole of the move's wait (searching about 1-3M positions a second). */
+const STRENGTHS: { nodes: number | null; label: string }[] = [
   { nodes: 10_000, label: "Easy" },
   { nodes: 200_000, label: "Medium" },
   { nodes: 2_000_000, label: "Hard" },
-  { nodes: 20_000_000, label: "Strongest" },
+  { nodes: null, label: "Strongest" },
 ];
+
+/** Analysis budget, the same at every strength: positions for the position's
+ * own value and line, and in all for the values of its moves. */
+const ANALYSIS_NODES = 1_000_000;
+const ANALYSIS_MOVES_NODES = 2_000_000;
+
+const NO_MOVES = new Set<number>();
 
 const START = `${".".repeat(81)}/${".".repeat(9)}/x/-`;
 
@@ -42,7 +51,7 @@ function describeValue(v: Value | null): string {
     case 0:
       return "Draw with perfect play";
     case 2:
-      return "Too deep to solve at this strength";
+      return "Too deep to solve yet";
     default:
       return "…";
   }
@@ -55,6 +64,9 @@ export function App() {
   const [mode, setMode] = useState<Mode>(joinCode.current ? "online" : "play-x");
   const [strength, setStrength] = useState(1);
   const [analysis, setAnalysis] = useState(false);
+  // Against the engine or on one device, settings are chosen first and the
+  // game begins with "Start game"; they are locked while it is played.
+  const [started, setStarted] = useState(false);
   const [history, setHistory] = useState<string[]>([START]);
   const [moves, setMoves] = useState<number[]>([]);
   const [legal, setLegal] = useState<Set<number>>(new Set());
@@ -79,8 +91,11 @@ export function App() {
   const current = history[history.length - 1];
   const pos = parsePosition(current);
   const nodeLimit = STRENGTHS[strength].nodes;
+  const inGame = mode === "online" || started;
   const solverTurn =
-    result === "" && ((mode === "play-x" && pos.toMove === "o") || (mode === "play-o" && pos.toMove === "x"));
+    started &&
+    result === "" &&
+    ((mode === "play-x" && pos.toMove === "o") || (mode === "play-o" && pos.toMove === "x"));
   const status_ = online.status;
   const connected = status_.kind === "connected";
   const isHost = status_.kind === "waiting" || (status_.kind === "connected" && status_.host);
@@ -129,6 +144,7 @@ export function App() {
     }
     setLoadError("");
     generation.current++;
+    if (mode !== "online") setStarted(true);
     setHistory([s]);
     setMoves([]);
   }
@@ -216,10 +232,17 @@ export function App() {
     // like it is thinking, so the game does not feel rushed. Raising the
     // random number to the power 1.5 slightly favors short waits: 48% under
     // 4 s and 76% under 5 s, against 33% and 67% for an even spread.
+    const waitMs = 3000 + 3000 * Math.random() ** 1.5;
     const wait = new Promise((resolve) => {
-      timer = window.setTimeout(resolve, 3000 + 3000 * Math.random() ** 1.5);
+      timer = window.setTimeout(resolve, waitMs);
     });
-    Promise.all([engine.bestMove(variant, current, nodeLimit), wait]).then(([m]) => {
+    // The strongest setting thinks for the whole wait, less a margin for
+    // finishing the last search.
+    const search =
+      nodeLimit === null
+        ? engine.think(variant, current, waitMs - 300).then((t) => t.move)
+        : engine.bestMove(variant, current, nodeLimit);
+    Promise.all([search, wait]).then(([m]) => {
       if (!live) return;
       setThinking(null);
       if (gen === generation.current && m >= 0) playMove(m);
@@ -234,25 +257,34 @@ export function App() {
 
   // Analysis: the value of the position and of each legal move.
   useEffect(() => {
-    if (!analysis || result !== "" || solverTurn || mode === "online") return;
+    if (!analysis || !inGame || result !== "" || mode === "online" || legal.size === 0) return;
     const gen = generation.current;
-    engine.solve(variant, current, nodeLimit).then((v) => {
-      if (gen !== generation.current) return;
-      setPosValue(v);
-      // A solved position also gets a line of optimal play.
-      if (v !== 2) {
-        engine.principalVariation(variant, current, nodeLimit).then((line) => {
-          if (gen === generation.current) setLine(line);
-        });
-      }
-    });
-    engine.analyze(variant, current, nodeLimit).then((vals) => {
+    const ignore = () => {};
+    analyst
+      .solve(variant, current, ANALYSIS_NODES)
+      .then((v) => {
+        if (gen !== generation.current) return;
+        setPosValue(v);
+        // A solved position also gets a line of optimal play.
+        if (v !== 2) {
+          analyst.principalVariation(variant, current, ANALYSIS_NODES).then((line) => {
+            if (gen === generation.current) setLine(line);
+          }, ignore);
+        }
+      }, ignore);
+    const perMove = Math.max(20_000, Math.floor(ANALYSIS_MOVES_NODES / legal.size));
+    analyst.analyze(variant, current, perMove).then((vals) => {
       if (gen === generation.current) setValues(vals);
-    });
-  }, [analysis, variant, current, nodeLimit, result, solverTurn, mode]);
+    }, ignore);
+    // Work for a position that is no longer shown is abandoned at once.
+    return () => {
+      if (analyst.busy) analyst.restart();
+    };
+  }, [analysis, inGame, variant, current, result, mode, legal]);
 
-  const status =
-    result === "draw"
+  const status = !inGame
+    ? "Pick your settings, then start"
+    : result === "draw"
       ? "Draw"
       : result
         ? `${markOf(result)} wins`
@@ -274,11 +306,11 @@ export function App() {
       <main>
         <Board
           pos={pos}
-          legal={legal}
+          legal={inGame ? legal : NO_MOVES}
           lastMove={moves.length ? moves[moves.length - 1] : null}
           values={analysisShown ? values : null}
           onMove={(m) => playMove(m)}
-          disabled={solverTurn || thinking !== null || waitingForPeer}
+          disabled={!inGame || solverTurn || thinking !== null || waitingForPeer}
         />
         <aside>
           <div className={`status${result ? " over" : ""}`} aria-live="polite">
@@ -289,7 +321,7 @@ export function App() {
               Rules
               <select
                 value={variant}
-                disabled={mode === "online" && !isHost}
+                disabled={mode === "online" ? !isHost : started}
                 onChange={(e) => {
                   const v = e.target.value as Variant;
                   setVariant(v);
@@ -308,6 +340,7 @@ export function App() {
               Mode
               <select
                 value={mode}
+                disabled={started}
                 onChange={(e) => {
                   if (mode === "online") online.leave();
                   setMode(e.target.value as Mode);
@@ -326,7 +359,11 @@ export function App() {
               <>
                 <label>
                   Strength
-                  <select value={strength} onChange={(e) => setStrength(Number(e.target.value))}>
+                  <select
+                    value={strength}
+                    disabled={started || mode === "two-players"}
+                    onChange={(e) => setStrength(Number(e.target.value))}
+                  >
                     {STRENGTHS.map((s, i) => (
                       <option key={s.label} value={i}>
                         {s.label}
@@ -345,9 +382,26 @@ export function App() {
                 <button onClick={rematch} disabled={!connected}>
                   Rematch
                 </button>
+              ) : !started ? (
+                <button
+                  className="primary"
+                  onClick={() => {
+                    newGame();
+                    setStarted(true);
+                  }}
+                >
+                  Start game
+                </button>
               ) : (
                 <>
-                  <button onClick={newGame}>New game</button>
+                  <button
+                    onClick={() => {
+                      newGame();
+                      setStarted(false);
+                    }}
+                  >
+                    New game
+                  </button>
                   <button onClick={undo} disabled={moves.length === 0}>
                     Undo
                   </button>

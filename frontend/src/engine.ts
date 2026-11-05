@@ -16,11 +16,16 @@ type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 type Call = Request extends infer R ? (R extends Request ? Omit<R, "id"> : never) : never;
 
 class Engine {
-  private worker = new Worker(new URL("./engine.worker.ts", import.meta.url), { type: "module" });
+  private worker!: Worker;
   private pending = new Map<number, Pending>();
   private nextId = 0;
 
   constructor() {
+    this.spawn();
+  }
+
+  private spawn() {
+    this.worker = new Worker(new URL("./engine.worker.ts", import.meta.url), { type: "module" });
     this.worker.onmessage = (event: MessageEvent<Response>) => {
       const res = event.data;
       const p = this.pending.get(res.id);
@@ -29,6 +34,20 @@ class Engine {
       if (res.ok) p.resolve(res.value);
       else p.reject(new Error(res.error));
     };
+  }
+
+  /** Whether some call has not answered yet. */
+  get busy() {
+    return this.pending.size > 0;
+  }
+
+  /** Abandons every unanswered call (they reject) by replacing the worker:
+   * a search in WebAssembly cannot be interrupted any other way. */
+  restart() {
+    this.worker.terminate();
+    for (const p of this.pending.values()) p.reject(new Error("cancelled"));
+    this.pending.clear();
+    this.spawn();
   }
 
   private call<T>(req: Call): Promise<T> {
@@ -86,3 +105,7 @@ class Engine {
 export type Thought = { move: number; score: number; depth: number; value: Value; nodes: number };
 
 export const engine = new Engine();
+
+/** A second engine for analysis, so analysing never delays the engine's move
+ * and can be cancelled when the position changes. */
+export const analyst = new Engine();
