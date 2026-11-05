@@ -4,6 +4,9 @@ A high-performance Ultimate Tic-Tac-Toe solver in Rust, with the rules
 formalized in Lean 4 and solver results checked by a Lean-verified certificate
 checker.
 
+Play it in the browser at https://levonalexanian.github.io/ulttt/: against the
+engine, or online against a friend.
+
 Three rule variants are supported everywhere; see [`RULES.md`](RULES.md):
 
 - `classic`: won or full boards are closed.
