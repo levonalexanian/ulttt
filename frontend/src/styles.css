@@ -261,13 +261,15 @@ aside {
   cursor: default;
 }
 
-.analysis {
+.analysis,
+.online {
   padding: 12px 16px;
   background: var(--panel);
   border-radius: 10px;
 }
 
-.analysis p {
+.analysis p,
+.online p {
   margin: 4px 0;
 }
 
