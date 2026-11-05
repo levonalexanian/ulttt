@@ -1,5 +1,5 @@
 import type { Value } from "./engine";
-import { type Position, boardOf } from "./position";
+import { type Position, boardOf, glyph } from "./position";
 
 interface Props {
   pos: Position;
@@ -45,11 +45,11 @@ export function Board({ pos, legal, lastMove, values, onMove, disabled }: Props)
                   onClick={() => onMove(m)}
                   aria-label={`board ${b + 1} cell ${c + 1}${mark ? `: ${mark}` : ""}${v ? `, ${VERDICT_LABEL[v]}` : ""}`}
                 >
-                  {mark ? <span className={`mark mark-${mark}`}>{mark === "x" ? "×" : "○"}</span> : null}
+                  {mark ? <span className={`mark mark-${mark}`}>{glyph(mark)}</span> : null}
                 </button>
               );
             })}
-            {owner ? <div className={`owner owner-${owner}`}>{owner === "x" ? "×" : "○"}</div> : null}
+            {owner ? <div className={`owner owner-${owner}`}>{glyph(owner)}</div> : null}
           </div>
         );
       })}

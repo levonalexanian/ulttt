@@ -50,23 +50,22 @@ const WORDS = [
   "Whirring",
 ];
 
-const SPINNER = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 
 export const randomWord = () => WORDS[Math.floor(Math.random() * WORDS.length)];
 
-/** A spinner, a word and dots that count up, e.g. "✻ Pondering..". */
+/** A spinner, a word and dots that count up, e.g. "✎ Pondering..". */
 export function Thinking({ word }: { word: string }) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 120);
+    const id = setInterval(() => setTick((t) => t + 1), 400);
     return () => clearInterval(id);
   }, []);
-  // The dots advance every fourth frame: "", ".", "..", "...".
-  const dots = ".".repeat(Math.floor(tick / 4) % 4);
+  // The dots count up: "", ".", "..", "...".
+  const dots = ".".repeat(tick % 4);
   return (
     <span className="thinking">
       <span className="spinner" aria-hidden="true">
-        {SPINNER[tick % SPINNER.length]}
+        {"✎︎"}
       </span>
       {word}
       <span className="dots">{dots}</span>

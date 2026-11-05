@@ -3,13 +3,13 @@ import { Board } from "./Board";
 import { Thinking, randomWord } from "./Thinking";
 import { engine, type Result, type Value, VARIANTS, type Variant } from "./engine";
 import { codeFromUrl, joinLink, useOnline } from "./online";
-import { boardOf, cellOf, parsePosition } from "./position";
+import { boardOf, cellOf, glyph, parsePosition } from "./position";
 
 type Mode = "two-players" | "play-x" | "play-o" | "online";
 
 const MODES: { id: Mode; label: string }[] = [
-  { id: "play-x", label: "You play ×" },
-  { id: "play-o", label: "You play ○" },
+  { id: "play-x", label: `You play ${glyph("x")}` },
+  { id: "play-o", label: `You play ${glyph("o")}` },
   { id: "two-players", label: "Two players" },
   { id: "online", label: "Online" },
 ];
@@ -24,7 +24,7 @@ const STRENGTHS = [
 const START = `${".".repeat(81)}/${".".repeat(9)}/x/-`;
 
 const other = (p: "x" | "o") => (p === "x" ? "o" : "x");
-const markOf = (p: "x" | "o") => (p === "x" ? "×" : "○");
+const markOf = glyph;
 
 /** The positions of a game: the start and after each move. */
 async function replay(variant: Variant, moves: number[]): Promise<string[]> {
@@ -36,9 +36,9 @@ async function replay(variant: Variant, moves: number[]): Promise<string[]> {
 function describeValue(v: Value | null): string {
   switch (v) {
     case 1:
-      return "× wins with perfect play";
+      return `${glyph("x")} wins with perfect play`;
     case -1:
-      return "○ wins with perfect play";
+      return `${glyph("o")} wins with perfect play`;
     case 0:
       return "Draw with perfect play";
     case 2:
@@ -71,7 +71,7 @@ export function App() {
 
   const online = useOnline();
   const [joinText, setJoinText] = useState("");
-  // Online: the side this browser plays. The host starts as ×.
+  // Online: the side this browser plays. The host starts as X.
   const [me, setMe] = useState<"x" | "o">("x");
   // Online: set while a received message is being applied.
   const busy = useRef(false);
@@ -414,7 +414,7 @@ export function App() {
                 <p className="line">
                   Best line:{" "}
                   {line
-                    .map((m, i) => `${(pos.toMove === "x") === (i % 2 === 0) ? "×" : "○"}${boardOf(m) + 1}.${cellOf(m) + 1}`)
+                    .map((m, i) => `${glyph((pos.toMove === "x") === (i % 2 === 0) ? "x" : "o")}${boardOf(m) + 1}.${cellOf(m) + 1}`)
                     .join(" ")}
                 </p>
               ) : null}
@@ -427,7 +427,7 @@ export function App() {
           <ol className="moves">
             {moves.map((m, i) => (
               <li key={i}>
-                {i % 2 === 0 ? "×" : "○"} board {boardOf(m) + 1}, cell {cellOf(m) + 1}
+                {glyph(i % 2 === 0 ? "x" : "o")} board {boardOf(m) + 1}, cell {cellOf(m) + 1}
               </li>
             ))}
           </ol>
