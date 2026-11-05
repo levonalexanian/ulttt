@@ -1,4 +1,6 @@
-# ulttt
+# [ulttt](https://levonalexanian.github.io/ulttt/)
+
+![A game in progress against the engine, with analysis on](frontend/screenshot.png)
 
 A high-performance Ultimate Tic-Tac-Toe solver in Rust, with the rules
 formalized in Lean 4 and solver results checked by a Lean-verified certificate

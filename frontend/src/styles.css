@@ -496,3 +496,26 @@ details:has(> summary:hover) {
 .cell:not(:disabled):hover {
   background-color: color-mix(in srgb, var(--ink) 8%, var(--panel));
 }
+
+/* The GitHub mark in the header's corner, linking to the source. */
+header {
+  position: relative;
+}
+
+header .repo {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  display: flex;
+  padding: 6px;
+  border-radius: 50%;
+  color: var(--line-strong);
+  transition:
+    color 0.12s,
+    background-color 0.12s;
+}
+
+header .repo:hover {
+  color: var(--ink);
+  background-color: color-mix(in srgb, var(--ink) 9%, transparent);
+}
