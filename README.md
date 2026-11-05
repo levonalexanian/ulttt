@@ -20,7 +20,7 @@ Three rule variants are supported everywhere; see [`RULES.md`](RULES.md):
 
 | Part | Where | What |
 | --- | --- | --- |
-| Rules in Lean | `proofs/` | The three variants, the game value, and proofs: games end, symmetries preserve value, `mayWin` pruning is sound, the certificate checker is sound |
+| Rules in Lean | `proofs/` | The three variants, the game value, and proofs: games end, symmetries preserve value, `mayWin` pruning is sound, the certificate checker is sound, X wins `open` from the empty board |
 | Engine | `backend/crates/game` | Bitboard rules, symmetries, notation, perft |
 | Solvers | `backend/crates/solver` | `dfpn`: depth-first proof-number search (the default). `search`: alpha-beta with a lock-free transposition table, draw detection, move ordering, history heuristic and parallel search. `alphabeta`: the plain baseline |
 | Playing engine | `backend/crates/engine` | For positions too deep to solve: iterative-deepening alpha-beta (transposition table, PVS, killer and history ordering, quiescence) over a heuristic evaluation tuned per variant; also a Monte Carlo tree search engine. Drives the frontend's moves |
@@ -66,8 +66,13 @@ Every position of the p46 and p42 suites in all three variants, and of
 classic-p38 (140 positions), is Lean-verified with `ulttt verify`: their
 certificates were accepted by `ulttt-check`.
 
-The empty board is still out of reach: on `open`, df-pn's proof number for
-"X wins" keeps growing with the search.
+From the empty board, search is still out of reach: on `open`, df-pn's proof
+number for "X wins" keeps growing (70k after 15 billion positions). But `open`
+is solved from the empty board in Lean: the hand strategy of Bertholon et al.
+(2020) is checked against every reply of O by `ulttt-paper`, and
+`paper_wins` proves that this means X can force a win. The strategy reaches
+63,960 positions (602 billion different games), and its longest game is 43
+moves, the paper's bound.
 
 ### Playing engine
 

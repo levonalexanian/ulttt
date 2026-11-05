@@ -17,3 +17,6 @@ jobs:
         with:
           lake-package-directory: proofs
           build-args: "--wfail"
+      - name: Check that the paper's strategy wins open
+        working-directory: proofs
+        run: .lake/build/bin/ulttt-paper
