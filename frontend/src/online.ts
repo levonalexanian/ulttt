@@ -10,8 +10,11 @@ export type Message =
   | { type: "start"; variant: Variant; you: "x" | "o"; moves: number[] }
   /** The sender's move, as move number `ply` of the game (0-based). */
   | { type: "move"; ply: number; move: number }
-  /** The guest asks the host for a new game. */
-  | { type: "rematch" };
+  /** The guest asks the host for a new game with sides swapped, under these
+   * rules (the current ones if absent). */
+  | { type: "rematch"; variant?: Variant }
+  /** The guest asks the host to restart the game, not yet begun, under other rules. */
+  | { type: "rules"; variant: Variant };
 
 export type Status =
   | { kind: "idle" }
