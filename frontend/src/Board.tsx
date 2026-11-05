@@ -21,7 +21,8 @@ function verdict(value: Value, toMove: "x" | "o"): "win" | "draw" | "loss" | "un
 const VERDICT_LABEL = { win: "wins", draw: "draws", loss: "loses", unknown: "unknown" };
 
 export function Board({ pos, legal, lastMove, values, onMove, disabled }: Props) {
-  const playable = new Set([...legal].map(boardOf));
+  // Outlined only when the player can move now.
+  const playable = new Set(disabled ? [] : [...legal].map(boardOf));
   // Free to play on any open board (the first move, or sent to a closed
   // board): outline the whole board rather than each small one.
   const anywhere = playable.size > 1;

@@ -28,8 +28,6 @@ const STRENGTHS: { nodes: number | null; label: string }[] = [
 const ANALYSIS_NODES = 1_000_000;
 const ANALYSIS_MOVES_NODES = 2_000_000;
 
-const NO_MOVES = new Set<number>();
-
 const START = `${".".repeat(81)}/${".".repeat(9)}/x/-`;
 
 const other = (p: "x" | "o") => (p === "x" ? "o" : "x");
@@ -113,15 +111,27 @@ export function App() {
   }
 
   /** Online: a new game with sides swapped. The guest asks the host for it. */
-  function rematch() {
+  function rematch(v: Variant = variant) {
     if (!isHost) {
-      online.send({ type: "rematch" });
+      online.send({ type: "rematch", variant: v });
       return;
     }
     const swapped = other(me);
     setMe(swapped);
+    setVariant(v);
     newGame();
-    sendStart(variant, swapped, []);
+    sendStart(v, swapped, []);
+  }
+
+  /** Online: other rules for a game nobody has moved in yet, same sides. */
+  function restartWithRules(v: Variant) {
+    if (!isHost) {
+      online.send({ type: "rules", variant: v });
+      return;
+    }
+    setVariant(v);
+    newGame();
+    sendStart(v, me, []);
   }
 
   function undo() {
@@ -202,7 +212,9 @@ export function App() {
     } else if (msg.type === "move" && msg.ply === moves.length && pos.toMove !== me && legal.has(msg.move)) {
       playMove(msg.move, true).finally(done);
     } else {
-      if (msg.type === "rematch" && isHost) rematch();
+      const known = (v: unknown): v is Variant => VARIANTS.includes(v as Variant);
+      if (msg.type === "rematch" && isHost) rematch(known(msg.variant) ? msg.variant : variant);
+      if (msg.type === "rules" && isHost && moves.length === 0 && known(msg.variant)) restartWithRules(msg.variant);
       done();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -306,7 +318,7 @@ export function App() {
       <main>
         <Board
           pos={pos}
-          legal={inGame ? legal : NO_MOVES}
+          legal={legal}
           lastMove={moves.length ? moves[moves.length - 1] : null}
           values={analysisShown ? values : null}
           onMove={(m) => playMove(m)}
@@ -321,12 +333,18 @@ export function App() {
               Rules
               <select
                 value={variant}
-                disabled={mode === "online" ? !isHost : started}
+                // Online, either player may change the rules before the first
+                // move or once the game is over (which starts the rematch).
+                disabled={mode === "online" ? connected && moves.length > 0 && result === "" : started}
                 onChange={(e) => {
                   const v = e.target.value as Variant;
+                  if (mode === "online" && connected) {
+                    if (result !== "") rematch(v);
+                    else restartWithRules(v);
+                    return;
+                  }
                   setVariant(v);
                   newGame();
-                  if (mode === "online") sendStart(v, me, []);
                 }}
               >
                 {VARIANTS.map((v) => (
@@ -379,7 +397,7 @@ export function App() {
             )}
             <div className="buttons">
               {mode === "online" ? (
-                <button onClick={rematch} disabled={!connected}>
+                <button className={result ? "primary" : ""} onClick={() => rematch()} disabled={!connected}>
                   Rematch
                 </button>
               ) : !started ? (
