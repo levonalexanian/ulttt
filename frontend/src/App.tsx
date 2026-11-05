@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Board } from "./Board";
+import { Thinking, randomWord } from "./Thinking";
 import { engine, type Result, type Value, VARIANTS, type Variant } from "./engine";
 import { codeFromUrl, joinLink, useOnline } from "./online";
 import { boardOf, cellOf, parsePosition } from "./position";
@@ -61,7 +62,8 @@ export function App() {
   const [values, setValues] = useState<Map<number, Value> | null>(null);
   const [posValue, setPosValue] = useState<Value | null>(null);
   const [line, setLine] = useState<number[]>([]);
-  const [thinking, setThinking] = useState(false);
+  // While the engine thinks, the word it shows (e.g. "Pondering").
+  const [thinking, setThinking] = useState<string | null>(null);
   const [loadText, setLoadText] = useState("");
   const [loadError, setLoadError] = useState("");
   // Bumped on every change, so answers about an older position are ignored.
@@ -207,11 +209,24 @@ export function App() {
   useEffect(() => {
     if (!solverTurn) return;
     const gen = generation.current;
-    setThinking(true);
-    engine.bestMove(variant, current, nodeLimit).then((m) => {
-      setThinking(false);
+    let live = true;
+    let timer = 0;
+    setThinking(randomWord());
+    // The engine answers in well under a second; it takes 3-7 seconds to look
+    // like it is thinking, so the game does not feel rushed.
+    const wait = new Promise((resolve) => {
+      timer = window.setTimeout(resolve, 3000 + Math.random() * 4000);
+    });
+    Promise.all([engine.bestMove(variant, current, nodeLimit), wait]).then(([m]) => {
+      if (!live) return;
+      setThinking(null);
       if (gen === generation.current && m >= 0) playMove(m);
     });
+    return () => {
+      live = false;
+      clearTimeout(timer);
+      setThinking(null);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solverTurn, variant, current, nodeLimit]);
 
@@ -240,7 +255,7 @@ export function App() {
       : result
         ? `${markOf(result)} wins`
         : thinking
-          ? "Solver is thinking…"
+          ? <Thinking word={thinking} />
           : mode === "online" && connected
             ? pos.toMove === me
               ? `Your move (${markOf(me)})`
@@ -261,7 +276,7 @@ export function App() {
           lastMove={moves.length ? moves[moves.length - 1] : null}
           values={analysisShown ? values : null}
           onMove={(m) => playMove(m)}
-          disabled={solverTurn || thinking || waitingForPeer}
+          disabled={solverTurn || thinking !== null || waitingForPeer}
         />
         <aside>
           <div className={`status${result ? " over" : ""}`} aria-live="polite">

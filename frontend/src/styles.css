@@ -366,3 +366,21 @@ summary {
   font-size: 0.9rem;
   overflow-wrap: anywhere;
 }
+
+.thinking {
+  color: var(--accent, #d97757);
+}
+
+.thinking .spinner {
+  display: inline-block;
+  width: 1.2em;
+  text-align: center;
+  margin-right: 0.35em;
+}
+
+/* Keep the text still while the dots count up. */
+.thinking .dots {
+  display: inline-block;
+  width: 1.5em;
+  text-align: left;
+}
