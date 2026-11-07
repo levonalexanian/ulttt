@@ -64,12 +64,59 @@ main {
   flex-wrap: wrap;
 }
 
+/* The board, with the evaluation bar to its left when analysis is on. */
+.board-area {
+  display: flex;
+  gap: 10px;
+  width: min(100%, 638px);
+}
+
+.evalbar {
+  position: relative;
+  flex: 0 0 28px;
+  overflow: hidden;
+  background: var(--o);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--panel-shadow);
+}
+
+.evalbar-x {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--x);
+  transition: height 0.5s ease;
+}
+
+.evalbar-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--panel);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.evalbar-label.on-x {
+  bottom: 6px;
+}
+
+.evalbar-label.on-o {
+  top: 6px;
+}
+
 .global {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   gap: var(--board-gap);
-  width: min(100%, 600px);
+  flex: 1;
+  min-width: 0;
+  max-width: 600px;
   aspect-ratio: 1;
   padding: var(--board-gap);
   background: var(--line-strong);
@@ -327,6 +374,15 @@ summary {
   aside {
     width: 100%;
   }
+  .board-area {
+    gap: 6px;
+  }
+  .evalbar {
+    flex-basis: 22px;
+  }
+  .evalbar-label {
+    font-size: 0.65rem;
+  }
 }
 
 .notation {
@@ -448,6 +504,9 @@ header h1 {
 @media (prefers-reduced-motion: reduce) {
   .thinking .spinner {
     animation: none;
+  }
+  .evalbar-x {
+    transition: none;
   }
 }
 
