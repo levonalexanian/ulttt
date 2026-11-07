@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Board } from "./Board";
+import { EvalBar, type Evaluation, fromScore } from "./EvalBar";
 import { Thinking, randomWord } from "./Thinking";
-import { analyst, engine, type Result, type Value, VARIANTS, type Variant } from "./engine";
+import { analyst, engine, type Result, type Thought, UNKNOWN, type Value, VARIANTS, type Variant } from "./engine";
 import { codeFromUrl, joinLink, useOnline } from "./online";
 import { boardOf, cellOf, glyph, parsePosition } from "./position";
 
@@ -23,10 +24,13 @@ const STRENGTHS: { nodes: number | null; label: string }[] = [
   { nodes: null, label: "Strongest" },
 ];
 
-/** Analysis budget, the same at every strength: positions for the position's
- * own value and line, and in all for the values of its moves. */
+/** Analysis budget, the same at every strength: positions for the solver's
+ * value of the position, and in all for the values of its moves. */
 const ANALYSIS_NODES = 1_000_000;
 const ANALYSIS_MOVES_NODES = 2_000_000;
+/** The engine's passes over a position for the evaluation bar, in
+ * milliseconds: a quick first look, then deeper ones while it stays shown. */
+const EVAL_PASSES_MS = [250, 1500, 6000];
 
 const START = `${".".repeat(81)}/${".".repeat(9)}/x/-`;
 
@@ -38,21 +42,6 @@ async function replay(variant: Variant, moves: number[]): Promise<string[]> {
   const history = [START];
   for (const m of moves) history.push(await engine.play(variant, history[history.length - 1], m));
   return history;
-}
-
-function describeValue(v: Value | null): string {
-  switch (v) {
-    case 1:
-      return `${glyph("x")} wins with perfect play`;
-    case -1:
-      return `${glyph("o")} wins with perfect play`;
-    case 0:
-      return "Draw with perfect play";
-    case 2:
-      return "Too deep to solve yet";
-    default:
-      return "…";
-  }
 }
 
 export function App() {
@@ -70,8 +59,7 @@ export function App() {
   const [legal, setLegal] = useState<Set<number>>(new Set());
   const [result, setResult] = useState<Result>("");
   const [values, setValues] = useState<Map<number, Value> | null>(null);
-  const [posValue, setPosValue] = useState<Value | null>(null);
-  const [line, setLine] = useState<number[]>([]);
+  const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   // While the engine thinks, the word it shows (e.g. "Pondering").
   const [thinking, setThinking] = useState<string | null>(null);
   const [loadText, setLoadText] = useState("");
@@ -224,8 +212,7 @@ export function App() {
   useEffect(() => {
     const gen = generation.current;
     setValues(null);
-    setPosValue(null);
-    setLine([]);
+    setEvaluation(null);
     Promise.all([engine.legalMoves(variant, current), engine.result(variant, current)]).then(([l, r]) => {
       if (gen !== generation.current) return;
       setLegal(new Set(l));
@@ -267,27 +254,36 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solverTurn, variant, current, nodeLimit]);
 
-  // Analysis: the value of the position and of each legal move.
+  // Analysis: the evaluation of the position, and the value of each legal move.
   useEffect(() => {
     if (!analysis || !inGame || result !== "" || mode === "online" || legal.size === 0) return;
     const gen = generation.current;
+    const fresh = () => gen === generation.current;
     const ignore = () => {};
-    analyst
-      .solve(variant, current, ANALYSIS_NODES)
-      .then((v) => {
-        if (gen !== generation.current) return;
-        setPosValue(v);
-        // A solved position also gets a line of optimal play.
-        if (v !== 2) {
-          analyst.principalVariation(variant, current, ANALYSIS_NODES).then((line) => {
-            if (gen === generation.current) setLine(line);
-          }, ignore);
-        }
-      }, ignore);
+    const toMove = pos.toMove;
+    // A forced win found by the engine says how far away it is, so it is kept
+    // over the solver's bare value; either is kept over a heuristic score.
+    const solved = (value: Value) => {
+      if (value === UNKNOWN || !fresh()) return;
+      setEvaluation((e) => (e?.kind === "forced" ? e : { kind: "solved", value: value as -1 | 0 | 1 }));
+    };
+    const thought = (t: Thought) => {
+      if (!fresh()) return;
+      const e = fromScore(t.score, t.depth, toMove);
+      if (e.kind === "forced") setEvaluation(e);
+      else if (t.value !== UNKNOWN) solved(t.value);
+      else setEvaluation((prev) => (prev && prev.kind !== "score" ? prev : e));
+    };
+    // The worker answers in order: a quick look for the bar, the solver, the
+    // moves' values for the dots, then deeper looks for the bar.
+    const [quick, ...deeper] = EVAL_PASSES_MS;
+    analyst.think(variant, current, quick).then(thought, ignore);
+    analyst.solve(variant, current, ANALYSIS_NODES).then(solved, ignore);
     const perMove = Math.max(20_000, Math.floor(ANALYSIS_MOVES_NODES / legal.size));
     analyst.analyze(variant, current, perMove).then((vals) => {
       if (gen === generation.current) setValues(vals);
     }, ignore);
+    for (const ms of deeper) analyst.think(variant, current, ms).then(thought, ignore);
     // Work for a position that is no longer shown is abandoned at once.
     return () => {
       if (analyst.busy) analyst.restart();
@@ -324,14 +320,17 @@ export function App() {
         </a>
       </header>
       <main>
-        <Board
-          pos={pos}
-          legal={legal}
-          lastMove={moves.length ? moves[moves.length - 1] : null}
-          values={analysisShown ? values : null}
-          onMove={(m) => playMove(m)}
-          disabled={!inGame || solverTurn || thinking !== null || waitingForPeer}
-        />
+        <div className="board-area">
+          {analysisShown ? <EvalBar evaluation={evaluation} result={result} variant={variant} /> : null}
+          <Board
+            pos={pos}
+            legal={legal}
+            lastMove={moves.length ? moves[moves.length - 1] : null}
+            values={analysisShown ? values : null}
+            onMove={(m) => playMove(m)}
+            disabled={!inGame || solverTurn || thinking !== null || waitingForPeer}
+          />
+        </div>
         <aside>
           <div className={`status${result ? " over" : ""}`} aria-live="polite">
             {status}
@@ -491,15 +490,6 @@ export function App() {
           ) : null}
           {analysisShown && result === "" ? (
             <div className="analysis">
-              <p>{describeValue(posValue)}</p>
-              {line.length ? (
-                <p className="line">
-                  Best line:{" "}
-                  {line
-                    .map((m, i) => `${glyph((pos.toMove === "x") === (i % 2 === 0) ? "x" : "o")}${boardOf(m) + 1}.${cellOf(m) + 1}`)
-                    .join(" ")}
-                </p>
-              ) : null}
               <p className="legend">
                 <span className="dot v-win" /> wins <span className="dot v-draw" /> draws{" "}
                 <span className="dot v-loss" /> loses <span className="dot v-unknown" /> unknown
